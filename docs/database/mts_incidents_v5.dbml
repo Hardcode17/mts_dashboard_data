@@ -1,0 +1,560 @@
+// MTS Incident Control Center - v5 (PostgreSQL, 3NF-oriented; Keycloak/OIDC)
+// Paste into dbdiagram.io. All table names are plural.
+// Distinguish internal OIDC users from external ITSM people; keep separate ITSM and coordinator assignments.
+// No derived SLA, dashboard-group membership or counters are stored.
+
+Project mts_incident_control {
+  database_type: 'PostgreSQL'
+  Note: 'Only users log into this application (coordinators, authenticated by OIDC). external_people are ITSM contacts without accounts. ITSM incident assignments target external_people; coordination task assignments target users. Source JSON is an initial snapshot.'
+}
+
+Enum coordination_task_status {
+  open
+  completed
+  cancelled
+}
+
+Enum coordination_assignment_status {
+  assigned     [note: 'Assigned to a coordinator group; coordinator_user_id may be null until chosen']
+  in_progress
+  redirected   [note: 'Historical status: work moved to another coordinator group']
+  completed
+  cancelled
+}
+
+Enum incident_status {
+  assigned       [note: 'source stateId 0']
+  in_progress    [note: 'source stateId 2']
+  resolved       [note: 'source stateId 7; may be reopened']
+  closed         [note: 'source stateId 10; terminal']
+  research       [note: 'source stateId 20']
+}
+
+Enum impact_level {
+  low
+  medium
+  high
+  highest
+}
+
+Enum urgency_level {
+  low
+  medium
+  high
+  highest
+}
+
+Enum service_audience {
+  customer
+  internal_user
+  technical
+}
+
+Enum team_kind {
+  coordination
+  resolution
+}
+
+Enum team_member_role {
+  member
+  lead
+}
+
+Enum incident_kind {
+  mass
+}
+
+Enum incident_link_kind {
+  related_to
+  causes
+  duplicate_of
+}
+
+Enum notification_delivery_status {
+  pending
+  sending
+  sent
+  failed
+}
+
+// --- Users and organizational structure --------------------------------------
+Table users {
+  id bigint [pk, increment]
+  identity_issuer varchar(512) [not null, note: 'OIDC iss; identifies the realm / identity provider']
+  identity_subject varchar(255) [not null, note: 'OIDC sub; stable identity within issuer; NOT a password']
+  login varchar(120) [not null, note: 'Username / preferred_username for display; NOT a stable identity key']
+  display_name varchar(255) [not null]
+  is_active boolean [not null, default: true, note: 'Local access allowlist; may additionally require coordinator role from IdP']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (identity_issuer, identity_subject) [unique]
+  }
+}
+
+// People referenced by source ITSM incident data. NO accounts in this application.
+// Imported from initiatorLogin and assignedEmployeeLogin; can own products/services.
+Table external_people {
+  id bigint [pk, increment]
+  source_system varchar(64) [not null, default: 'itsm', note: 'Namespace for external identity']
+  external_login varchar(120) [not null, note: 'Original ITSM login; never an application credential']
+  display_name varchar(255) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (source_system, external_login) [unique]
+  }
+}
+
+Table teams {
+  id bigint [pk, increment]
+  name varchar(255) [not null, unique]
+  kind team_kind [not null, default: 'resolution']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+// ITSM teams/groups from assignedGroupName, containing external ITSM people.
+// Source snapshot does not prove actual team membership; populate from an authoritative directory or manual config.
+Table team_members {
+  id bigint [pk, increment]
+  team_id bigint [not null, ref: > teams.id]
+  external_person_id bigint [not null, ref: > external_people.id]
+  role team_member_role [not null, default: 'member']
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (team_id, external_person_id) [unique]
+  }
+}
+
+// --- Internal coordinator groups ----------------------------------------------
+// All application users are coordinators; authorization is enforced by OIDC + local users.is_active.
+// A group may optionally be mapped to an ITSM coordination team for initial routing.
+Table coordinator_groups {
+  id bigint [pk, increment]
+  name varchar(255) [not null, unique]
+  description text
+  source_team_id bigint [ref: > teams.id, note: 'Optional routing association to an ITSM assigned team; multiple internal groups may share it']
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    source_team_id
+  }
+}
+
+Table coordinator_group_members {
+  id bigint [pk, increment]
+  coordinator_group_id bigint [not null, ref: > coordinator_groups.id]
+  user_id bigint [not null, ref: > users.id]
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (coordinator_group_id, user_id) [unique]
+    (user_id, is_active)
+  }
+}
+
+// --- Product hierarchy --------------------------------------------------------
+Table products {
+  id bigint [pk, increment]
+  name varchar(255) [not null, unique]
+  description text
+  owner_external_person_id bigint [ref: > external_people.id, note: 'External ITSM product owner; possible assignee']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table services {
+  id bigint [pk, increment]
+  product_id bigint [not null, ref: > products.id]
+  name varchar(255) [not null, note: 'Local name, without [Product] prefix from source JSON']
+  owner_external_person_id bigint [ref: > external_people.id, note: 'External ITSM service owner; possible assignee']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (product_id, name) [unique]
+  }
+}
+
+Table scenarios {
+  id bigint [pk, increment]
+  service_id bigint [not null, ref: > services.id]
+  name varchar(255) [not null]
+  description text
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (service_id, name) [unique]
+  }
+}
+
+// --- Lookups ------------------------------------------------------------------
+Table priority_levels {
+  id int [pk, note: '1=low, 2=medium, 3=high, 4=highest; matches source priorityId']
+  code varchar(32) [not null, unique]
+  name varchar(64) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table receiving_channels {
+  id bigint [pk, increment]
+  name varchar(255) [not null, unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table incident_state_reasons {
+  id bigint [pk, increment]
+  source_code varchar(30) [not null, unique]
+  name varchar(255)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+// --- Incidents ----------------------------------------------------------------
+Table incidents {
+  id bigint [pk, increment]
+  number varchar(32) [not null, unique, note: 'Source id, e.g. INC000021938167']
+  kind incident_kind [not null, default: 'mass']
+
+  scenario_id bigint [not null, ref: > scenarios.id]
+  initiator_external_person_id bigint [not null, ref: > external_people.id]
+  receiving_channel_id bigint [not null, ref: > receiving_channels.id]
+  assigned_team_id bigint [ref: > teams.id, note: 'Actual ITSM assignedGroupName from incoming JSON; separate from internal coordinator groups']
+
+  status incident_status [not null]
+  state_reason_id bigint [ref: > incident_state_reasons.id]
+  priority_level_id int [not null, ref: > priority_levels.id]
+  impact impact_level [not null]
+  urgency urgency_level [not null]
+  audience service_audience [not null]
+
+  header varchar(500) [not null]
+  description text [not null]
+  short_description text
+  page_url text [note: 'Canonical URL for this incident in ITSM; not productUrl and not links_data']
+  links_data jsonb [not null, default: '{}', note: 'Extra named URLs: {"Grafana": "https://...", "Runbook": "https://..."}; not the canonical page_url']
+  solution text [note: 'NULL for assigned/in_progress: sample non-NULL values are dirty data']
+
+  submitted_at timestamptz [not null, note: 'JSON submitDate']
+  deadline_at timestamptz [note: 'JSON deadline; nullable']
+  completed_at timestamptz [note: 'JSON completionDate: transition to Resolved']
+  needs_follow_up boolean [note: 'JSON isNeedUp; NULL differs from false']
+
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (status, priority_level_id)
+    deadline_at
+    scenario_id
+    initiator_external_person_id
+    assigned_team_id
+  }
+
+  checks {
+    `status NOT IN ('assigned', 'in_progress') OR solution IS NULL` [name: 'chk_active_incident_has_no_solution']
+    `jsonb_typeof(links_data) = 'object'` [name: 'chk_links_data_object']
+  }
+}
+
+// Keep source-specific / possibly inconsistent fields for lossless import/export.
+// These are source facts, NOT flags calculated from incident_hierarchies/links.
+Table incident_source_attributes {
+  incident_id bigint [pk, ref: > incidents.id]
+  source_sys_id varchar(32) [unique]
+  source_product_id varchar(64)
+  source_product_master_id varchar(64)
+  source_service_id varchar(64)
+  source_product_url text [note: 'JSON productUrl, separate from incidents.page_url']
+  source_last_assignment_to_team_at timestamptz [note: 'JSON lastAssignmentToTeamDateTime; not a person assignment timestamp']
+  waiting_exit_at timestamptz [note: 'Normalize source placeholder 0001-01-01 to NULL']
+  elimination_type varchar(255)
+  elimination_type_code varchar(64)
+  source_is_effect boolean [not null, default: false]
+  source_is_reason boolean [not null, default: false]
+  source_is_duplicate boolean [not null, default: false]
+  source_is_master boolean [not null, default: false]
+  source_is_root boolean [not null, default: false]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+// One parent may have many children; each child has at most one direct parent.
+// Prevent self-parenting and cycles by constraint + service/trigger checks.
+Table incident_hierarchies {
+  child_incident_id bigint [pk, ref: > incidents.id]
+  parent_incident_id bigint [not null, ref: > incidents.id]
+  linked_by_user_id bigint [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    parent_incident_id
+  }
+
+  checks {
+    `parent_incident_id <> child_incident_id` [name: 'chk_hierarchy_not_self']
+  }
+}
+
+// Other relationships: duplication, causality and loose association.
+Table incident_links {
+  id bigint [pk, increment]
+  source_incident_id bigint [not null, ref: > incidents.id]
+  target_incident_id bigint [not null, ref: > incidents.id]
+  kind incident_link_kind [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (source_incident_id, target_incident_id, kind) [unique]
+  }
+
+  checks {
+    `source_incident_id <> target_incident_id` [name: 'chk_link_not_self']
+  }
+}
+
+// --- Person assignment history ------------------------------------------------
+// ITSM incident can have zero or one current external person assignee; distinct from internal coordinator assignments.
+// Assignee may be a product owner, service owner or other external ITSM person.
+// assigned_at is NULL when initial snapshot does not supply assignment time.
+Table incident_assignments {
+  id bigint [pk, increment]
+  incident_id bigint [not null, ref: > incidents.id]
+  assignee_external_person_id bigint [not null, ref: > external_people.id]
+  assigned_by_user_id bigint [ref: > users.id]
+  assigned_at timestamptz
+  ended_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (incident_id, ended_at)
+    (assignee_external_person_id, ended_at)
+  }
+
+  checks {
+    `ended_at IS NULL OR assigned_at IS NULL OR ended_at >= assigned_at` [name: 'chk_assignment_end_after_start']
+  }
+}
+
+// --- Internal coordination workflow (NOT source ITSM state) -------------------
+// A new coordination task can be opened for the same incident after a previous
+// task is completed. PostgreSQL must enforce at most one open task per incident.
+Table coordination_tasks {
+  id bigint [pk, increment]
+  incident_id bigint [not null, ref: > incidents.id]
+  status coordination_task_status [not null, default: 'open']
+  finished_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (incident_id, status)
+  }
+
+  checks {
+    `(status = 'open' AND finished_at IS NULL) OR (status IN ('completed', 'cancelled') AND finished_at IS NOT NULL)` [name: 'chk_coordination_task_finish']
+  }
+}
+
+// One row per routing / internal coordinator assignment attempt. Old row ends with 'redirected',
+// new row begins with 'assigned'; the parent coordination_task remains 'open'.
+// The coordinator is selected by backend; nullable when no eligible member exists.
+Table coordination_task_assignments {
+  id bigint [pk, increment]
+  coordination_task_id bigint [not null, ref: > coordination_tasks.id]
+  coordinator_group_id bigint [not null, ref: > coordinator_groups.id]
+  coordinator_user_id bigint [ref: > users.id]
+  status coordination_assignment_status [not null, default: 'assigned']
+  assigned_by_user_id bigint [ref: > users.id, note: 'NULL when backend auto-assigns']
+  redirected_by_user_id bigint [ref: > users.id]
+  redirect_reason text
+  assigned_at timestamptz [not null, default: `now()`]
+  ended_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (coordination_task_id, ended_at)
+    (coordinator_group_id, ended_at)
+    (coordinator_user_id, ended_at)
+  }
+
+  checks {
+    `(status IN ('assigned', 'in_progress') AND ended_at IS NULL) OR (status IN ('redirected', 'completed', 'cancelled') AND ended_at IS NOT NULL)` [name: 'chk_coordination_assignment_lifecycle']
+    `ended_at IS NULL OR ended_at >= assigned_at` [name: 'chk_coordination_assignment_time']
+  }
+}
+
+// Enforces that a selected coordinator belongs to the selected coordinator group;
+// when user_id is NULL, the task is queued at group level until assignment.
+Ref: coordination_task_assignments.(coordinator_group_id, coordinator_user_id) > coordinator_group_members.(coordinator_group_id, user_id)
+
+// --- Append-only change history ----------------------------------------------
+Table incident_status_changes {
+  id bigint [pk, increment]
+  incident_id bigint [not null, ref: > incidents.id]
+  previous_status incident_status
+  new_status incident_status [not null]
+  changed_at timestamptz [not null]
+  changed_by_user_id bigint [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (incident_id, changed_at)
+  }
+}
+
+Table incident_priority_changes {
+  id bigint [pk, increment]
+  incident_id bigint [not null, ref: > incidents.id]
+  previous_priority_level_id int [not null, ref: > priority_levels.id]
+  new_priority_level_id int [not null, ref: > priority_levels.id]
+  changed_at timestamptz [not null]
+  changed_by_user_id bigint [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (incident_id, changed_at)
+  }
+}
+
+// Tracks changes of source ITSM assignedGroupName independently of internal coordination task handoffs.
+Table incident_assigned_team_changes {
+  id bigint [pk, increment]
+  incident_id bigint [not null, ref: > incidents.id]
+  previous_team_id bigint [ref: > teams.id]
+  new_team_id bigint [ref: > teams.id]
+  changed_at timestamptz [not null]
+  changed_by_user_id bigint [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (incident_id, changed_at)
+  }
+}
+
+Table incident_deadline_changes {
+  id bigint [pk, increment]
+  incident_id bigint [not null, ref: > incidents.id]
+  previous_deadline_at timestamptz
+  new_deadline_at timestamptz
+  changed_at timestamptz [not null]
+  changed_by_user_id bigint [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (incident_id, changed_at)
+  }
+}
+
+// --- Notification channel types vs event types --------------------------------
+// A channel type (Telegram) is NOT the same as an event type (SLA breach).
+Table notification_types {
+  id bigint [pk, increment]
+  code varchar(40) [not null, unique, note: 'in_app | email | telegram | webhook']
+  name varchar(100) [not null]
+  description text
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table notification_event_types {
+  id bigint [pk, increment]
+  code varchar(64) [not null, unique, note: 'new_incident | became_critical | assigned_to_coordinators | coordination_task_assigned | coordination_task_redirected | resolved | reopened | sla_warning | sla_breached']
+  name varchar(150) [not null]
+  description text
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table notification_connections {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  notification_type_id bigint [not null, ref: > notification_types.id]
+  connection_metadata jsonb [not null, default: '{}', note: 'Provider-specific settings: chat_id, email, endpoint; store secret references, not raw tokens']
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (user_id, is_active)
+    notification_type_id
+  }
+}
+
+// Normalized equivalent of allowed_priority_ids: [1,3,4] on each connection.
+Table notification_connection_priorities {
+  notification_connection_id bigint [not null, ref: > notification_connections.id]
+  priority_level_id int [not null, ref: > priority_levels.id]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (notification_connection_id, priority_level_id) [pk]
+  }
+}
+
+// One notification is generated for one recipient and one incident event.
+Table notifications {
+  id bigint [pk, increment]
+  incident_id bigint [not null, ref: > incidents.id]
+  recipient_user_id bigint [not null, ref: > users.id]
+  event_type_id bigint [not null, ref: > notification_event_types.id]
+  title varchar(255) [not null]
+  body text [not null, note: 'Historical message snapshot, not a calculated dashboard field']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  read_at timestamptz
+
+  indexes {
+    (recipient_user_id, read_at, created_at)
+    (incident_id, created_at)
+  }
+}
+
+// Each active connection selected for an event gets an independent delivery row.
+Table notification_deliveries {
+  id bigint [pk, increment]
+  notification_id bigint [not null, ref: > notifications.id]
+  notification_connection_id bigint [not null, ref: > notification_connections.id]
+  status notification_delivery_status [not null, default: 'pending']
+  external_message_id varchar(255)
+  attempted_at timestamptz
+  sent_at timestamptz
+  failure_reason text
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (notification_id, notification_connection_id) [unique]
+    (status, created_at)
+  }
+}
+
+// PostgreSQL migrations (outside DBML) should add:
+// - UNIQUE (incident_id) WHERE ended_at IS NULL on incident_assignments;
+// - recursive cycle-prevention for incident_hierarchies;
+// - updated_at triggers;
+// - audit assigned-team change generation when incidents.assigned_team_id changes;
+// - validation that notification_deliveries connection.user_id == notification.recipient_user_id;
+// - enforce OIDC identity and users.is_active and active coordinator-group membership at assignment time;
+// - UNIQUE (incident_id) WHERE status = 'open' on coordination_tasks;
+// - UNIQUE (coordination_task_id) WHERE ended_at IS NULL on coordination_task_assignments;
+// - transaction/lock coordination_tasks row during redirects and status transitions;
+// - NO local passwords: credentials and account lifecycle belong to the OIDC identity provider;
+// - app-level URL validation and authorization for links_data JSONB.
