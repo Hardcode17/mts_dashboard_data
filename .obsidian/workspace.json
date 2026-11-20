@@ -11,14 +11,10 @@
             "id": "94a8721bfbf973a1",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "docs/character_problems_разбор.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "character_problems_разбор"
+              "title": "Новая вкладка"
             }
           }
         ]
@@ -99,7 +95,6 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "docs/character_problems_разбор.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -118,7 +113,6 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "docs/character_problems_разбор.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
@@ -161,7 +155,6 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "docs/character_problems_разбор.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
@@ -190,8 +183,15 @@
   },
   "active": "94a8721bfbf973a1",
   "lastOpenFiles": [
+    "docs/json_data_analysis/incidents_attributes_разбор.md",
+    "docs/json_data_analysis/character_problems_разбор.md",
+    "docs/json_data_analysis",
     "docs/incidents_attributes_разбор.md",
+    "docs/json_analysis/incidents_attributes_разбор.md",
     "docs/character_problems_разбор.md",
+    "docs/json_analysis/character_problems_разбор.md",
+    "docs/json_analysis",
+    "docs/incident-classification.md",
     "ideas/ideas.md",
     "docs/three-day-plan.md",
     "Предоставленные материалы/МТС.pdf"
