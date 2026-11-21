@@ -1,0 +1,257 @@
+[
+  {
+    "tool": "list_incidents",
+    "input": {
+      "filters": {
+        "unassigned": true
+      },
+      "limit": 1
+    },
+    "output": {
+      "contractVersion": "1.0.0",
+      "ok": true,
+      "data": {
+        "items": [
+          {
+            "incidentId": "INC000001",
+            "title": "Синтетический сбой оплаты",
+            "state": "Assigned",
+            "priorityId": 4,
+            "serviceId": "service-demo",
+            "siteId": "site-demo",
+            "assignedGroupId": null,
+            "assignedPersonId": null,
+            "deadline": null,
+            "updatedAt": "2026-11-22T09:00:00Z"
+          }
+        ],
+        "nextCursor": null,
+        "snapshotId": "demo-snapshot",
+        "checkpoint": "demo-checkpoint-100"
+      },
+      "meta": {
+        "generatedAt": "2026-11-22T09:00:00Z",
+        "sources": [
+          {
+            "sourceId": "itsm-demo",
+            "asOf": "2026-11-22T09:00:00Z",
+            "status": "fresh"
+          }
+        ],
+        "completeness": "complete",
+        "warnings": []
+      }
+    }
+  },
+  {
+    "tool": "get_incident",
+    "input": {
+      "incidentId": "INC000001"
+    },
+    "output": {
+      "contractVersion": "1.0.0",
+      "ok": true,
+      "data": {
+        "incidentId": "INC000001",
+        "title": "Синтетический сбой оплаты",
+        "state": "Assigned",
+        "priorityId": 4,
+        "serviceId": "service-demo",
+        "siteId": "site-demo",
+        "assignedGroupId": null,
+        "assignedPersonId": null,
+        "deadline": null,
+        "updatedAt": "2026-11-22T09:00:00Z",
+        "description": "Только тестовые данные",
+        "solution": null
+      },
+      "meta": {
+        "generatedAt": "2026-11-22T09:00:00Z",
+        "sources": [
+          {
+            "sourceId": "itsm-demo",
+            "asOf": "2026-11-22T09:00:00Z",
+            "status": "fresh"
+          }
+        ],
+        "completeness": "complete",
+        "warnings": []
+      }
+    }
+  },
+  {
+    "tool": "list_incident_changes",
+    "input": {
+      "cursor": "demo-checkpoint-100",
+      "limit": 1
+    },
+    "output": {
+      "contractVersion": "1.0.0",
+      "ok": true,
+      "data": {
+        "events": [
+          {
+            "eventId": "inc-change:00000000-0000-4000-8000-000000000001:101",
+            "eventSeq": "101",
+            "sourceId": "itsm-demo",
+            "incidentId": "INC000001",
+            "sourceVersion": "7",
+            "changeRevision": "3",
+            "kind": "ADDED",
+            "observedAt": "2026-11-22T09:00:00Z",
+            "sourceTime": null,
+            "changedFields": [
+              "priorityId"
+            ]
+          }
+        ],
+        "nextCursor": "demo-checkpoint-101",
+        "hasMore": true
+      },
+      "meta": {
+        "generatedAt": "2026-11-22T09:00:00Z",
+        "sources": [
+          {
+            "sourceId": "itsm-demo",
+            "asOf": "2026-11-22T09:00:00Z",
+            "status": "fresh"
+          }
+        ],
+        "completeness": "complete",
+        "warnings": []
+      }
+    }
+  },
+  {
+    "tool": "find_similar_incidents",
+    "input": {
+      "incidentId": "INC000001"
+    },
+    "output": {
+      "contractVersion": "1.0.0",
+      "ok": true,
+      "data": {
+        "items": [
+          {
+            "incident": {
+              "incidentId": "INC000002",
+              "title": "Синтетический сбой оплаты",
+              "state": "Closed",
+              "priorityId": 4,
+              "serviceId": "service-demo",
+              "siteId": "site-demo",
+              "assignedGroupId": null,
+              "assignedPersonId": null,
+              "deadline": null,
+              "updatedAt": "2026-11-22T09:00:00Z"
+            },
+            "resolutionSummary": "Восстановлен тестовый сервис",
+            "matchedSignals": [
+              "Оплата"
+            ],
+            "differences": [
+              "Другая площадка"
+            ],
+            "historicalResolverGroupId": "group-old",
+            "evidence": {
+              "kind": "history",
+              "sourceRef": "itsm:INC000002",
+              "observedAt": "2026-11-22T09:00:00Z",
+              "summary": "Решение завершённого случая"
+            }
+          }
+        ],
+        "nextCursor": null
+      },
+      "meta": {
+        "generatedAt": "2026-11-22T09:00:00Z",
+        "sources": [
+          {
+            "sourceId": "itsm-demo",
+            "asOf": "2026-11-22T09:00:00Z",
+            "status": "fresh"
+          }
+        ],
+        "completeness": "complete",
+        "warnings": []
+      }
+    }
+  },
+  {
+    "tool": "find_resolver_groups",
+    "input": {
+      "incidentId": "INC000001"
+    },
+    "output": {
+      "contractVersion": "1.0.0",
+      "ok": true,
+      "data": {
+        "items": [
+          {
+            "groupId": "group-demo",
+            "name": "Тестовая группа",
+            "responsibility": "confirmed",
+            "evidence": [
+              {
+                "kind": "directory",
+                "sourceRef": "directory:demo:1",
+                "observedAt": "2026-11-22T09:00:00Z",
+                "summary": "Сервис × площадка"
+              }
+            ]
+          }
+        ],
+        "nextCursor": null,
+        "recommendedGroupId": "group-demo",
+        "reason": "confirmed_owner"
+      },
+      "meta": {
+        "generatedAt": "2026-11-22T09:00:00Z",
+        "sources": [
+          {
+            "sourceId": "itsm-demo",
+            "asOf": "2026-11-22T09:00:00Z",
+            "status": "fresh"
+          }
+        ],
+        "completeness": "complete",
+        "warnings": []
+      }
+    }
+  },
+  {
+    "tool": "find_assignees",
+    "input": {
+      "groupId": "group-demo"
+    },
+    "output": {
+      "contractVersion": "1.0.0",
+      "ok": true,
+      "data": {
+        "items": [
+          {
+            "personId": "person-demo",
+            "displayName": "Тестовый исполнитель",
+            "groupId": "group-demo",
+            "competence": "unknown",
+            "onDuty": "unknown",
+            "evidence": []
+          }
+        ],
+        "nextCursor": null
+      },
+      "meta": {
+        "generatedAt": "2026-11-22T09:00:00Z",
+        "sources": [
+          {
+            "sourceId": "itsm-demo",
+            "asOf": "2026-11-22T09:00:00Z",
+            "status": "fresh"
+          }
+        ],
+        "completeness": "complete",
+        "warnings": []
+      }
+    }
+  }
+]
