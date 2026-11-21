@@ -209,7 +209,6 @@ POST /api/incidents/:id/ack
 POST /api/incidents/:id/assign      // если разрешено, proxy в ITSC
 GET  /api/groups/presets
 PUT  /api/groups/presets/:id
-GET  /api/events                    // SSE, опционально
 GET  /api/snapshot/status           // lastUpdated, stale
 ```
 
@@ -219,7 +218,7 @@ GET  /api/snapshot/status           // lastUpdated, stale
 
 - **Server state**: TanStack Query или SWR. Кеш, refetch, retry, stale-while-revalidate.
 - **UI state**: группа, фильтры, выбранный инцидент, очередь алертов — local state + URL.
-- **Real-time**: сначала polling каждые 5 секунд, потом SSE или WebSocket.
+- **Real-time**: опрос снимка каждые 5 секунд; стенд читает моковый источник.
 - **Ack**: оптимистично, с откатом при ошибке.
 - **Конфликты**: версия или ETag; не перезаписывать чужое назначение.
 - **SLA-таймеры**: один общий `clock` на приложение, а не `setInterval` в каждой карточке.
@@ -257,7 +256,7 @@ GET  /api/snapshot/status           // lastUpdated, stale
 3. Как считаем SLA: источник, паузы, часовой пояс, отсутствие срока.
 4. Как показываем несколько затронутых сервисов и их владельцев.
 5. Пресеты групп: per-user или общая смена.
-6. Алерты: только in-app или ещё почта, мессенджер, MAX, Telegram.
+6. Оповещения: общий экран, Email, SMS, push, Telegram, Mattermost, MAX, МТС Линк, МТС Notifica и мобильный хаб. На стенде используются моковые адаптеры.
 7. Роли: координатор, наблюдатель, админ.
 8. Демо: жёстко зашитый JSON или уже API.
 
