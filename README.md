@@ -36,7 +36,7 @@ Backend: текущие INC, журнал, четыре группы, SLA и с�
 |---|---|---|
 | Исходные материалы | [презентация МТС](Предоставленные%20материалы/МТС.pdf) · [выгрузка INC](Предоставленные%20материалы/character_problems.json) · [словарь атрибутов](Предоставленные%20материалы/incidents_attributes.json) | Источники кейса; не переписываются |
 | Требования и решения | [бизнес-ТЗ](docs/requirements.html) · [разбор 58 предложений](docs/proposals.html) · [поддержка решений](docs/decision-support.html) | Производная документация команды |
-| API и контракты | [OpenAPI 3.1.0](docs/openapi.yaml) · [общий контракт ITSM](docs/itsm-mock-contract.md) · [связи инцидентов](docs/incident-relationships.md) | Зафиксированный контракт |
+| API и контракты | [OpenAPI 3.1.0](docs/openapi.yaml) · [общий контракт ITSM](docs/itsm-mock-contract.md) · [связи инцидентов](docs/incident-relationships.md) · [MCP v1: схемы и примеры](docs/mcp/MCP.md) | Контракты; MCP v1 подготовлен для ревью |
 | Данные и модель | [разбор выгрузки](docs/json_data_analysis/character_problems_разбор.md) · [классификация](docs/incident-classification.md) · [БД v5](docs/database/mts_database_v5_documentation.md) · [DBML](docs/database/mts_incidents_v5.dbml) | Производная документация |
 | Планы и контекст | [frontend](docs/frontend-plan.md) · [интеграция](docs/integration-plan.md) · [мониторинг](docs/monitoring-mode.md) · [три дня](docs/three-day-plan.md) · [эксплуатация](docs/mts-operations-and-integrations.md) | Планы и рабочие заметки |
 | Открытые вопросы | [вопросы](docs/Вопросы.md) · [идеи](docs/ideas/ideas.md) | Материалы обсуждения |

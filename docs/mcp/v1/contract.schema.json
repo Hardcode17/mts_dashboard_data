@@ -1,0 +1,1370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mts-dashboard:mcp:v1",
+  "$defs": {
+    "source": {
+      "type": "object",
+      "properties": {
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "asOf": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "fresh",
+            "stale",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "sourceId",
+        "asOf",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          },
+          "maxItems": 10,
+          "minItems": 1
+        },
+        "completeness": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 10
+        }
+      },
+      "required": [
+        "generatedAt",
+        "sources",
+        "completeness",
+        "warnings"
+      ],
+      "additionalProperties": false
+    },
+    "incident": {
+      "type": "object",
+      "properties": {
+        "incidentId": {
+          "type": "string",
+          "pattern": "^INC[0-9]{6,18}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "state": {
+          "enum": [
+            "Assigned",
+            "WorkInProgress",
+            "Research",
+            "Resolved",
+            "Closed"
+          ]
+        },
+        "priorityId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "serviceId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "siteId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assignedGroupId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assignedPersonId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deadline": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "incidentId",
+        "title",
+        "state",
+        "priorityId",
+        "serviceId",
+        "siteId",
+        "assignedGroupId",
+        "assignedPersonId",
+        "deadline",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "history",
+            "directory"
+          ]
+        },
+        "sourceRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "kind",
+        "sourceRef",
+        "observedAt",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "enum": [
+            "INVALID_ARGUMENT",
+            "NOT_FOUND",
+            "ACCESS_DENIED",
+            "SOURCE_UNAVAILABLE",
+            "CURSOR_EXPIRED",
+            "INVALID_CURSOR",
+            "RATE_LIMITED",
+            "UNSUPPORTED_FILTER"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "recovery": {
+          "enum": [
+            "none",
+            "retry",
+            "resync_snapshot",
+            "reauthenticate"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "recovery"
+      ],
+      "additionalProperties": false
+    },
+    "card": {
+      "type": "object",
+      "properties": {
+        "incidentId": {
+          "type": "string",
+          "pattern": "^INC[0-9]{6,18}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "state": {
+          "enum": [
+            "Assigned",
+            "WorkInProgress",
+            "Research",
+            "Resolved",
+            "Closed"
+          ]
+        },
+        "priorityId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "serviceId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "siteId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assignedGroupId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assignedPersonId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deadline": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 4000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "solution": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "incidentId",
+        "title",
+        "state",
+        "priorityId",
+        "serviceId",
+        "siteId",
+        "assignedGroupId",
+        "assignedPersonId",
+        "deadline",
+        "updatedAt",
+        "description",
+        "solution"
+      ],
+      "additionalProperties": false
+    },
+    "filters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "states": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "Assigned",
+              "WorkInProgress",
+              "Research",
+              "Resolved",
+              "Closed"
+            ]
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "priorityIds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "serviceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "siteId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "assignedGroupId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "unassigned": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "pattern": "^inc-change:[0-9a-f-]{36}:[1-9][0-9]{0,18}$"
+        },
+        "eventSeq": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,18}$"
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "incidentId": {
+          "type": "string",
+          "pattern": "^INC[0-9]{6,18}$"
+        },
+        "sourceVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
+        },
+        "changeRevision": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
+        },
+        "kind": {
+          "enum": [
+            "ADDED",
+            "UPDATED",
+            "MISSING",
+            "RETURNED"
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "sourceTime": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "changedFields": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "stateEnum",
+              "assignedGroupName",
+              "assignedEmployee",
+              "priorityId",
+              "deadline",
+              "solution"
+            ]
+          },
+          "maxItems": 6,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "eventId",
+        "eventSeq",
+        "sourceId",
+        "incidentId",
+        "sourceVersion",
+        "changeRevision",
+        "kind",
+        "observedAt",
+        "sourceTime",
+        "changedFields"
+      ],
+      "additionalProperties": false
+    },
+    "analogue": {
+      "type": "object",
+      "properties": {
+        "incident": {
+          "$ref": "#/$defs/incident"
+        },
+        "resolutionSummary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "matchedSignals": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 10
+        },
+        "differences": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 10
+        },
+        "historicalResolverGroupId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        }
+      },
+      "required": [
+        "incident",
+        "resolutionSummary",
+        "matchedSignals",
+        "differences",
+        "historicalResolverGroupId",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "group": {
+      "type": "object",
+      "properties": {
+        "groupId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "responsibility": {
+          "enum": [
+            "confirmed",
+            "historical",
+            "unknown"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "maxItems": 10
+        }
+      },
+      "required": [
+        "groupId",
+        "name",
+        "responsibility",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "responsibility": {
+                "const": "confirmed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "contains": {
+                  "properties": {
+                    "kind": {
+                      "const": "directory"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "assignee": {
+      "type": "object",
+      "properties": {
+        "personId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "groupId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "competence": {
+          "enum": [
+            "confirmed",
+            "unknown"
+          ]
+        },
+        "onDuty": {
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "maxItems": 10
+        }
+      },
+      "required": [
+        "personId",
+        "displayName",
+        "groupId",
+        "competence",
+        "onDuty",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "competence": {
+                    "const": "confirmed"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "onDuty": {
+                    "enum": [
+                      "yes",
+                      "no"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "contains": {
+                  "properties": {
+                    "kind": {
+                      "const": "directory"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "list_incidentsInput": {
+      "type": "object",
+      "properties": {
+        "filters": {
+          "$ref": "#/$defs/filters"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "list_incidentsOutput": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/incident"
+                  },
+                  "maxItems": 100
+                },
+                "nextCursor": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "snapshotId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "checkpoint": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              },
+              "required": [
+                "items",
+                "nextCursor",
+                "snapshotId",
+                "checkpoint"
+              ],
+              "additionalProperties": false
+            },
+            "meta": {
+              "$ref": "#/$defs/meta"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "data",
+            "meta"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "get_incidentInput": {
+      "type": "object",
+      "properties": {
+        "incidentId": {
+          "type": "string",
+          "pattern": "^INC[0-9]{6,18}$"
+        }
+      },
+      "required": [
+        "incidentId"
+      ],
+      "additionalProperties": false
+    },
+    "get_incidentOutput": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "$ref": "#/$defs/card"
+            },
+            "meta": {
+              "$ref": "#/$defs/meta"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "data",
+            "meta"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "list_incident_changesInput": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "required": [
+        "cursor"
+      ],
+      "additionalProperties": false
+    },
+    "list_incident_changesOutput": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "events": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/event"
+                  },
+                  "maxItems": 100
+                },
+                "nextCursor": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "hasMore": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "events",
+                "nextCursor",
+                "hasMore"
+              ],
+              "additionalProperties": false
+            },
+            "meta": {
+              "$ref": "#/$defs/meta"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "data",
+            "meta"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "find_similar_incidentsInput": {
+      "type": "object",
+      "properties": {
+        "incidentId": {
+          "type": "string",
+          "pattern": "^INC[0-9]{6,18}$"
+        },
+        "filters": {
+          "$ref": "#/$defs/filters"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "incidentId"
+      ],
+      "additionalProperties": false
+    },
+    "find_similar_incidentsOutput": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/analogue"
+                  },
+                  "maxItems": 100
+                },
+                "nextCursor": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "items",
+                "nextCursor"
+              ],
+              "additionalProperties": false
+            },
+            "meta": {
+              "$ref": "#/$defs/meta"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "data",
+            "meta"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "find_resolver_groupsInput": {
+      "type": "object",
+      "properties": {
+        "incidentId": {
+          "type": "string",
+          "pattern": "^INC[0-9]{6,18}$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "incidentId"
+      ],
+      "additionalProperties": false
+    },
+    "find_resolver_groupsOutput": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/group"
+                  },
+                  "maxItems": 100
+                },
+                "nextCursor": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "recommendedGroupId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reason": {
+                  "enum": [
+                    "confirmed_owner",
+                    "no_owner",
+                    "ambiguous_owner",
+                    "directory_stale",
+                    "directory_unavailable",
+                    "already_assigned"
+                  ]
+                }
+              },
+              "required": [
+                "items",
+                "nextCursor",
+                "recommendedGroupId",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "reason": {
+                        "const": "confirmed_owner"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "recommendedGroupId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    }
+                  },
+                  "else": {
+                    "properties": {
+                      "recommendedGroupId": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "meta": {
+              "$ref": "#/$defs/meta"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "data",
+            "meta"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "find_assigneesInput": {
+      "type": "object",
+      "properties": {
+        "groupId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "groupId"
+      ],
+      "additionalProperties": false
+    },
+    "find_assigneesOutput": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/assignee"
+                  },
+                  "maxItems": 100
+                },
+                "nextCursor": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "items",
+                "nextCursor"
+              ],
+              "additionalProperties": false
+            },
+            "meta": {
+              "$ref": "#/$defs/meta"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "data",
+            "meta"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "const": "1.0.0"
+            },
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          },
+          "required": [
+            "contractVersion",
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
