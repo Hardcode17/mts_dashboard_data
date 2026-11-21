@@ -3,10 +3,13 @@ info:
   title: Рабочее место координатора MCC
   version: 0.1.0
   description: |
-    Контракт ядра (KAN-15, KAN-20). ITCS передаёт полный снимок ITSM; координатор читает
-    опубликованное состояние. Официальные статус, приоритет, срок, команда и исполнитель
-    меняются в ITSM. «Детальнее» открывает `itsmUrl` конкретного INC. Дашборд увидит
-    изменение после применения следующей версии; открытие ссылки не меняет INC или задачу.
+    Контракт ядра (KAN-15, KAN-20, KAN-57, KAN-58). ITCS передаёт полный снимок ITSM; координатор
+    читает опубликованное состояние и **может изменять инциденты прямо из нашего дашборда**
+    (назначать ответственного, изменять статус и изменять назначенную группу). При изменении
+    из дашборда бэкенд синхронно обращается к внешней ITSM (`itsm-mock`) по **5. Общему контракту**
+    (`GET /itsm_incident`, `GET /itsm_incident/{sys_id}`, `GET /user`, `PATCH /itsm_incident/{sys_id}`),
+    обновляет локальную БД, фиксирует автора в журнале и завершает открытую внутреннюю задачу
+    при передаче ответственному. «Детальнее» также открывает `itsmUrl` конкретного INC.
 
     `sourceVersion` задаёт порядок снимков одного источника, `revision` — опубликованную
     версию на сервере, `eventSeq` — позицию в журнале, `eventId` — идентификатор события
@@ -15,12 +18,14 @@ info:
     Приём, чтение пакета, статус снимка и /health сверены с Hardcode17/mts_dashboard_backend
     (379b0ad). Пользовательский Bearer и остальные операции — целевой контракт по Jira,
     а не перечень развёрнутых контроллеров. Основания: docs/requirements.html,
-    docs/database/mts_database_v5_documentation.md (§8) в Hardcode17/mts_dashboard_data.
+    docs/itsm-mock-contract.md, docs/database/mts_database_v5_documentation.md (§8)
+    в Hardcode17/mts_dashboard_data.
 security:
   - coordinatorBearer: []
 tags:
   - {name: Импорт, description: Машинный клиент ITCS · KAN-21/27/53/54/55}
-  - {name: Экран, description: Группы и карточка · KAN-18/20/23/26}
+  - {name: Экран, description: Группы, карточка и изменение INC из дашборда · KAN-18/20/23/26/58}
+  - {name: ITSM Общий контракт, description: Двусторонний контракт ITSM / itsm-mock · KAN-57/58}
   - {name: События, description: Журнал и подтверждения смены · KAN-25/28/29}
   - {name: Координация, description: Личные настройки и внутренние задачи · KAN-24/30–34/37/45}
   - {name: Исследование, description: Асинхронный анализ по INC · KAN-39/40}
@@ -254,6 +259,109 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Экран]
+      operationId: patchDashboardIncident
+      summary: Изменить инцидент из дашборда (ответственный, статус, группа) через ITSM (KAN-58)
+      description: |
+        Находит sys_id инцидента, вызывает PATCH /itsm_incident/{sys_id} во внешней ITSM (itsm-mock),
+        синхронно обновляет локальную БД и журнал изменений с фиксацией координатора и возвращает
+        обновлённую карточку. При передаче внешнему ответственному или группе решения завершает
+        открытую внутреннюю задачу координатора (KAN-32).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IncidentPatchRequest'}
+            examples:
+              assignAndGroup:
+                summary: Назначить ответственного, сменить группу и перевести в работу
+                value:
+                  assignedEmployeeLogin: demo1
+                  assignedGroupName: Дежурные платёжных сервисов
+                  stateEnum: WorkInProgress
+      responses:
+        '200':
+          description: Обновлённая карточка инцидента после подтверждения ITSM.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision, incident, itsmUrl, itsmDemo, meetingUrl]
+                properties:
+                  revision: {$ref: '#/components/schemas/Revision'}
+                  incident: {$ref: '#/components/schemas/Incident'}
+                  itsmUrl: {type: string, format: uri}
+                  itsmDemo: {type: boolean}
+                  meetingUrl: {type: [string, 'null'], format: uri}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: ITSM_INVALID_STATE_TRANSITION — недопустимый переход статуса (например, из Closed)., content: *errorBody}
+  /itsm_incident:
+    get:
+      tags: [ITSM Общий контракт]
+      operationId: listItsmIncidents
+      summary: '5. Общий контракт: Получить список инцидентов (KAN-57)'
+      responses:
+        '200':
+          description: Полный список текущих инцидентов в ITSM (itsm-mock).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SourceIncident'}
+  /itsm_incident/{sys_id}:
+    parameters:
+      - {name: sys_id, in: path, required: true, description: Внутренний системный идентификатор инцидента (sysId)., schema: {type: string, minLength: 1}}
+    get:
+      tags: [ITSM Общий контракт]
+      operationId: getItsmIncidentBySysId
+      summary: '5. Общий контракт: Получить инцидент по ID (KAN-57)'
+      responses:
+        '200':
+          description: Полная запись инцидента по sys_id.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SourceIncident'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [ITSM Общий контракт]
+      operationId: patchItsmIncidentBySysId
+      summary: '5. Общий контракт: Назначить ответственного, изменить статус, изменить группу (KAN-57)'
+      description: |
+        Частичное обновление инцидента в ITSM (itsm-mock) по sys_id:
+        - Назначить ответственного (assignedEmployeeLogin / assignedEmployee из GET /user);
+        - Изменить статус (stateEnum / stateId / state с синхронизацией completionDate и solution);
+        - Изменить группу (assignedGroupName с обновлением lastAssignmentToTeamDateTime).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IncidentPatchRequest'}
+      responses:
+        '200':
+          description: Обновлённый объект инцидента в ITSM.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SourceIncident'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: ITSM_INVALID_STATE_TRANSITION — попытка изменить терминальный Closed инцидент., content: *errorBody}
+  /user:
+    get:
+      tags: [ITSM Общий контракт]
+      operationId: listItsmUsers
+      summary: '5. Общий контракт: Получить список пользователей (KAN-57)'
+      responses:
+        '200':
+          description: Список внешних пользователей ITSM, доступных для назначения ответственными.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ItsmUser'}
   /api/events:
     get:
       tags: [События]
@@ -779,3 +887,23 @@ components:
         unavailableSources: {type: array, items: {type: string}}
         hypothesis: {$ref: '#/components/schemas/OptionalText'}
         nextStep: {$ref: '#/components/schemas/OptionalText'}
+    ItsmUser:
+      type: object
+      required: [sysId, login, name]
+      properties:
+        sysId: {type: string, description: Идентификатор пользователя в ITSM.}
+        login: {type: string, description: Логин сотрудника (assignedEmployeeLogin).}
+        name: {type: string, description: Отображаемое имя сотрудника (assignedEmployee).}
+        groupName: {$ref: '#/components/schemas/OptionalText'}
+    IncidentPatchRequest:
+      type: object
+      description: Запрос на изменение инцидента по 5. Общему контракту (ответственный, статус, группа).
+      minProperties: 1
+      properties:
+        assignedEmployeeLogin: {$ref: '#/components/schemas/OptionalText'}
+        assignedEmployee: {$ref: '#/components/schemas/OptionalText'}
+        stateEnum: {$ref: '#/components/schemas/State'}
+        stateId: {type: integer, enum: [0, 2, 7, 10, 20]}
+        state: {type: string}
+        solution: {$ref: '#/components/schemas/OptionalText'}
+        assignedGroupName: {type: string, minLength: 1}
