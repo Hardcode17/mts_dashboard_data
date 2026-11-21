@@ -151,6 +151,7 @@ Drawer или страница:
 4. **История**: назначения, смены статуса, комментарии, время и автор.
 5. **Действия**: подтвердить («Увидел» / «Принять в работу»), перейти в ITSC, а также **прямо из дашборда изменить инцидент через бэкенд**: назначить ответственного (из списка пользователей `GET /user`), изменить статус инцидента и изменить назначенную группу (`PATCH /itsm_incident/{sys_id}`).
 6. **Состояния**: loading, error, empty, stale data.
+7. **Связанные инциденты**: внизу деталей — граф непосредственного родителя и дочерних инцидентов с переходом в их карточки (см. [спецификацию](incident-relationships.md)).
 
 ## 8. Компоненты Gravity UI
 
@@ -279,6 +280,7 @@ GET   /api/snapshot/status                // lastReceivedAt, lastSuccessAt, revi
 | ITSM-мок | Реализация общего REST-контракта (`/itsm_incident`, `/user`, `PATCH`) | [KAN-57](https://sokolenkonikita12ru.atlassian.net/browse/KAN-57) |
 | Backend | Изменение инцидентов из дашборда (ответственный, статус, группа) по контракту ITSM | [KAN-58](https://sokolenkonikita12ru.atlassian.net/browse/KAN-58) |
 | Мониторинг | Режим мониторинга для большого экрана координаторов | [KAN-62](https://sokolenkonikita12ru.atlassian.net/browse/KAN-62) |
+| Связанные инциденты | Граф в карточке и API иерархии | [KAN-67](https://sokolenkonikita12ru.atlassian.net/browse/KAN-67), [KAN-66](https://sokolenkonikita12ru.atlassian.net/browse/KAN-66) |
 
 Решение по редактированию инцидентов принято: **из нашего дашборда можно менять инциденты** (назначать ответственного, менять статус, менять группу). Реализация контракта на стороне `itsm-mock` и `mts_dashboard_backend` ведётся в приоритетных задачах `KAN-57` и `KAN-58` (см. [`docs/itsm-mock-contract.md`](itsm-mock-contract.md)).
 

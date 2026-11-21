@@ -24,7 +24,7 @@ security:
   - coordinatorBearer: []
 tags:
   - {name: Импорт, description: Машинный клиент ITCS · KAN-21/27/53/54/55}
-  - {name: Экран, description: Группы, карточка и изменение INC из дашборда · KAN-18/20/23/26/58}
+  - {name: Экран, description: 'Группы, карточка, изменение и граф связей INC · KAN-18/20/23/26/58/66'}
   - {name: ITSM Общий контракт, description: Двусторонний контракт ITSM / itsm-mock · KAN-57/58}
   - {name: События, description: Журнал и подтверждения смены · KAN-25/28/29}
   - {name: Координация, description: Личные настройки и внутренние задачи · KAN-24/30–34/37/45}
@@ -44,6 +44,8 @@ paths:
         worker проверяет записи: повтор id, неизвестный статус или неверное поле отклоняют
         весь снимок; предыдущая опубликованная версия остаётся доступной. Начальный снимок
         задаёт базу без оповещений; исчезновение строки не означает решение или удаление INC.
+        Необязательный parentId связывает дочернюю запись с номером id родителя в том же
+        источнике. Неизвестный родитель, ссылка на себя или цикл отклоняют снимок.
       security: [{machineBearer: []}]
       parameters:
         - name: Idempotency-Key
@@ -76,6 +78,11 @@ paths:
                 value:
                   - {id: INC000001, stateEnum: Assigned, priorityId: 3, submitDate: '2026-11-21T10:00:00Z', deadline: null, solution: null, productName: Витрина, service: Каталог, header: Сбой каталога, assignedGroupName: Поддержка каталога}
                   - &unchanged {id: INC000002, stateEnum: WorkInProgress, priorityId: 2, submitDate: '2026-11-21T09:58:00Z', deadline: null, solution: null, productName: Оплата, service: Касса, header: Задержка оплаты, assignedGroupName: Поддержка оплаты}
+              hierarchy:
+                summary: Снимок с дочерним INC перед его родителем
+                value:
+                  - {id: INC000002, parentId: INC000001, stateEnum: WorkInProgress, priorityId: 3, submitDate: '2026-11-21T10:01:00Z', solution: null, header: Задержка оплаты}
+                  - {id: INC000001, stateEnum: Assigned, priorityId: 4, submitDate: '2026-11-21T10:00:00Z', solution: null, header: Сбой платёжного шлюза}
               next:
                 summary: Версия 102 — новый ключ; изменился только INC000001, INC000002 передаётся снова
                 value:
@@ -298,7 +305,32 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
-        '409': {description: ITSM_INVALID_STATE_TRANSITION — недопустимый переход статуса (например, из Closed)., content: *errorBody}
+        '409': {description: 'ITSM_INVALID_STATE_TRANSITION — недопустимый переход статуса (например, из Closed).', content: *errorBody}
+  /api/incidents/{id}/relationships:
+    parameters: [{$ref: '#/components/parameters/IncidentId'}]
+    get:
+      tags: [Экран]
+      operationId: getIncidentRelationships
+      summary: Получить граф непосредственных связей инцидента (KAN-66)
+      description: |
+        Один шаг в обе стороны: выбранный INC, его непосредственный родитель и дети.
+        Граф не включает дубликаты, похожие инциденты или связи между сервисами.
+      responses:
+        '200':
+          description: Если связей нет, возвращается только выбранный узел и пустой массив рёбер.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IncidentRelationshipGraph'}
+              example:
+                focusId: INC000002
+                nodes:
+                  - {id: INC000001, header: Сбой платёжного шлюза, stateEnum: Assigned, priorityId: 4}
+                  - {id: INC000002, header: Задержка оплаты, stateEnum: WorkInProgress, priorityId: 3}
+                edges:
+                  - {parentId: INC000001, childId: INC000002}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /itsm_incident:
     get:
       tags: [ITSM Общий контракт]
@@ -326,6 +358,29 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/SourceIncident'}
         '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [ITSM Общий контракт]
+      operationId: patchItsmIncidentBySysId
+      summary: '5. Общий контракт: Назначить ответственного, изменить статус, изменить группу (KAN-57)'
+      description: |
+        Частичное обновление инцидента в ITSM (itsm-mock) по sys_id:
+        - Назначить ответственного (assignedEmployeeLogin / assignedEmployee из GET /user);
+        - Изменить статус (stateEnum / stateId / state с синхронизацией completionDate и solution);
+        - Изменить группу (assignedGroupName с обновлением lastAssignmentToTeamDateTime).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IncidentPatchRequest'}
+      responses:
+        '200':
+          description: Обновлённый объект инцидента в ITSM.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SourceIncident'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: ITSM_INVALID_STATE_TRANSITION — попытка изменить терминальный Closed инцидент., content: *errorBody}
   /itsm_incident/{sys_id}/page:
     get:
       tags: [ITSM Общий контракт]
@@ -351,29 +406,6 @@ paths:
             text/html:
               schema:
                 type: string
-    patch:
-      tags: [ITSM Общий контракт]
-      operationId: patchItsmIncidentBySysId
-      summary: '5. Общий контракт: Назначить ответственного, изменить статус, изменить группу (KAN-57)'
-      description: |
-        Частичное обновление инцидента в ITSM (itsm-mock) по sys_id:
-        - Назначить ответственного (assignedEmployeeLogin / assignedEmployee из GET /user);
-        - Изменить статус (stateEnum / stateId / state с синхронизацией completionDate и solution);
-        - Изменить группу (assignedGroupName с обновлением lastAssignmentToTeamDateTime).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/IncidentPatchRequest'}
-      responses:
-        '200':
-          description: Обновлённый объект инцидента в ITSM.
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/SourceIncident'}
-        '400': {$ref: '#/components/responses/Invalid'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        '409': {description: ITSM_INVALID_STATE_TRANSITION — попытка изменить терминальный Closed инцидент., content: *errorBody}
   /user:
     get:
       tags: [ITSM Общий контракт]
@@ -760,6 +792,9 @@ components:
       properties:
         id: {$ref: '#/components/schemas/IncidentNumber'}
         sysId: {type: string}
+        parentId:
+          description: Номер id родителя из того же источника. Нет поля — без изменений; null снимает импортированную связь.
+          anyOf: [{$ref: '#/components/schemas/IncidentNumber'}, {type: 'null'}]
         state: {type: string}
         stateEnum: {$ref: '#/components/schemas/State'}
         stateId: {type: integer}
@@ -837,6 +872,33 @@ components:
         remainingSeconds: {type: [integer, 'null'], description: Разность срока и серверного времени в секундах; null для неактивных или без срока.}
         overdue: {type: boolean, description: Только для активного INC при serverNow > deadline. Ровно в срок и при null — false.}
         groups: {type: array, uniqueItems: true, items: {$ref: '#/components/schemas/Group'}}
+    IncidentRelationshipGraph:
+      type: object
+      required: [focusId, nodes, edges]
+      properties:
+        focusId: {$ref: '#/components/schemas/IncidentNumber'}
+        nodes:
+          type: array
+          minItems: 1
+          description: Включает focusId. Каждый номер инцидента встречается один раз.
+          items:
+            type: object
+            required: [id, header, stateEnum, priorityId]
+            properties:
+              id: {$ref: '#/components/schemas/IncidentNumber'}
+              header: {type: string}
+              stateEnum: {$ref: '#/components/schemas/State'}
+              priorityId: {$ref: '#/components/schemas/Priority'}
+        edges:
+          type: array
+          uniqueItems: true
+          description: Направление от родителя к дочернему. Оба номера присутствуют в nodes; один из них — focusId.
+          items:
+            type: object
+            required: [parentId, childId]
+            properties:
+              parentId: {$ref: '#/components/schemas/IncidentNumber'}
+              childId: {$ref: '#/components/schemas/IncidentNumber'}
     Events:
       type: array
       items:
