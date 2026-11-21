@@ -86,6 +86,20 @@ research: 5
 
 [OpenAPI в этом репозитории](docs/openapi.yaml) объединяет реализованные и целевые операции. Реализованные маршруты и команды запуска описаны в репозитории бэкенда.
 
+## Обновление стенда
+
+После обновления `main` workflow из этого репозитория вызывает **Deploy backend**
+в `Hardcode17/mts_dashboard_backend`. Сборка и доставка выгрузки выполняются
+там же.
+
+Добавьте `STAND_DEPLOY_TOKEN` в
+[Actions Secrets этого репозитория](https://github.com/Hardcode17/mts_dashboard_data/settings/secrets/actions).
+Это [fine-grained token](https://github.com/settings/personal-access-tokens/new)
+владельца ресурсов `Hardcode17` с доступом только к `mts_dashboard_backend`
+и правом **Repository permissions → Actions → Read and write**. Токен со
+статусом **Pending** должен одобрить владелец организации. Если секрет ещё
+не настроен, запустите **Deploy backend** вручную на ветке `main`.
+
 ## Репозитории проекта
 
 | Репозиторий | Роль |

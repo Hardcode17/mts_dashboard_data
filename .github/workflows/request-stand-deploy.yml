@@ -1,0 +1,29 @@
+name: Request stand deployment
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  request-stand-deploy:
+    if: github.repository == 'Hardcode17/mts_dashboard_data'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Trigger Deploy backend on main
+        env:
+          STAND_DEPLOY_TOKEN: ${{ secrets.STAND_DEPLOY_TOKEN }}
+        run: |
+          if [[ -z "$STAND_DEPLOY_TOKEN" ]]; then
+            echo '::warning::Set STAND_DEPLOY_TOKEN to enable automatic stand deployment.'
+            exit 0
+          fi
+          curl --silent --show-error --fail-with-body --connect-timeout 10 --max-time 30 \
+            --request POST \
+            --header "Authorization: Bearer $STAND_DEPLOY_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'Content-Type: application/json' \
+            --data '{"ref":"main"}' \
+            'https://api.github.com/repos/Hardcode17/mts_dashboard_backend/actions/workflows/deploy.yml/dispatches'
