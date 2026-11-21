@@ -56,6 +56,7 @@ ITSC остаётся источником истины по карточке, �
 - Детали открываются **Drawer поверх дашборда**, чтобы не терять контекст.
 - ` /incidents/:id` нужен для ссылок из мессенджера и ITSC.
 - Фильтры и активная группа — в query string: `?group=critical&priority=P1`.
+- Режим мониторинга для большого экрана — `?mode=monitor`, подробности в [`monitoring-mode.md`](monitoring-mode.md).
 - Критическое оповещение — overlay поверх любого экрана, не route.
 
 ## 5. Layout
@@ -88,6 +89,7 @@ ITSC остаётся источником истины по карточке, �
 - `Последнее обновление: 14:58` и индикатор свежести.
 - Статус соединения: `live / polling / offline`.
 - Ручное обновление.
+- Кнопка **«Монитор»**: переключение в режим мониторинга для большого экрана координаторов — read-only сводка с 4 категориями и графиками Chart.js, без алертов и блокировок (см. [`monitoring-mode.md`](monitoring-mode.md)).
 - Переключатель темы, если поддерживаем dark.
 
 ### LeftRail
@@ -276,6 +278,7 @@ GET   /api/snapshot/status                // lastReceivedAt, lastSuccessAt, revi
 | Решение | Владение назначением, SLA и правила групп | [KAN-14](https://sokolenkonikita12ru.atlassian.net/browse/KAN-14) |
 | ITSM-мок | Реализация общего REST-контракта (`/itsm_incident`, `/user`, `PATCH`) | [KAN-57](https://sokolenkonikita12ru.atlassian.net/browse/KAN-57) |
 | Backend | Изменение инцидентов из дашборда (ответственный, статус, группа) по контракту ITSM | [KAN-58](https://sokolenkonikita12ru.atlassian.net/browse/KAN-58) |
+| Мониторинг | Режим мониторинга для большого экрана координаторов | [KAN-62](https://sokolenkonikita12ru.atlassian.net/browse/KAN-62) |
 
 Решение по редактированию инцидентов принято: **из нашего дашборда можно менять инциденты** (назначать ответственного, менять статус, менять группу). Реализация контракта на стороне `itsm-mock` и `mts_dashboard_backend` ведётся в приоритетных задачах `KAN-57` и `KAN-58` (см. [`docs/itsm-mock-contract.md`](itsm-mock-contract.md)).
 
