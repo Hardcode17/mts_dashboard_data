@@ -63,7 +63,7 @@
     <ul>
       <li>готовая целевая переменная <code>made_sla</code> — «нарушен ли целевой SLA», разметка не нужна;</li>
       <li>это лог <strong>событий</strong>, поэтому признаки берём строго «на момент t» — без подглядывания в будущее;</li>
-      <li>поля ложатся на наш формат (см. таблицу), шкалы приоритета 1–4 совпадают;</li>
+      <li>поля можно перенести в формат карточки МТС. В UCI самый срочный приоритет равен 1, в МТС — 4;</li>
       <li>задачу на этих данных уже решали в статьях и Kaggle-ноутбуках — есть с чем сравнить метрики.</li>
     </ul>
     <div class="table-wrap">
@@ -72,7 +72,8 @@
         <tbody>
           <tr><td><code>opened_at</code></td><td><code>submitDate</code></td></tr>
           <tr><td><code>resolved_at</code> / <code>closed_at</code></td><td><code>completionDate</code></td></tr>
-          <tr><td><code>priority</code>, <code>impact</code>, <code>urgency</code> (1–4)</td><td><code>priorityId</code>, <code>impactId</code>, <code>urgencyId</code></td></tr>
+          <tr><td><code>priority</code> (UCI)</td><td><code>priorityId = 5 − priority</code>. Critical → 4 (Наивысший), High → 3 (Высокий), Moderate → 2 (Средний), Low → 1 (Низкий)</td></tr>
+          <tr><td><code>impact</code>, <code>urgency</code></td><td><code>impactId</code>, <code>urgencyId</code> сохраняют значения UCI</td></tr>
           <tr><td><code>assignment_group</code></td><td><code>assignedGroupName</code></td></tr>
           <tr><td><code>assigned_to</code> / <code>resolved_by</code></td><td><code>assignedEmployee</code></td></tr>
           <tr><td><code>location</code></td><td>площадка (в тестовой выгрузке отсутствует)</td></tr>
@@ -97,7 +98,7 @@
           <tr><td><code>x4</code> — число переоткрытий к моменту t</td><td>качество первого решения</td></tr>
           <tr><td><code>x5</code> — часы без смены статуса</td><td>застрявшая карточка</td></tr>
           <tr><td><code>x6</code> — открытых карточек у исполнителя</td><td>загруженность; персональная скорость включается только при достаточной истории (≥ 10 задач), иначе fallback на группу</td></tr>
-          <tr><td><code>x7</code> — приоритет (1–4)</td><td>учитываем корреляцию с дедлайном: сначала проверяем на истории, что не считаем одно и то же дважды</td></tr>
+          <tr><td><code>x7</code> — приоритет UCI (1 — Critical, 4 — Low)</td><td>учитываем корреляцию с дедлайном: сначала проверяем на истории, что не считаем одно и то же дважды</td></tr>
         </tbody>
       </table>
     </div>
@@ -114,9 +115,9 @@
           <tr><td><code>w4</code> — reopen_count на момент t</td><td>0.423970</td></tr>
           <tr><td><code>w5</code> — часы без смены статуса</td><td>0.033348</td></tr>
           <tr><td><code>w6</code> — открытые карточки у исполнителя</td><td>0.007605</td></tr>
-          <tr><td><code>w7</code> — приоритет (1–4)</td><td>−2.089877</td></tr>
+          <tr><td><code>w7</code> — приоритет UCI (1 — Critical, 4 — Low)</td><td>−2.089877</td></tr>
           <tr><td>пороги категорий</td><td><code>medium = −1.2862</code>, <code>high = −0.9138</code> (подобраны на train под бюджет ~20% ложных срабатываний на карточку-не-просрочку)</td></tr>
-          <tr><td>SLA-часы псевдо-дедлайна</td><td>priority 1 → 4 ч, 2 → 4 ч, 3 → 48 ч, 4 → 72 ч — подобраны перебором из [4, 8, 24, 48, 72] по совпадению доли <code>resolved_at ≤ opened_at + SLA</code> с фактической долей <code>made_sla</code> на train</td></tr>
+          <tr><td>SLA-часы псевдо-дедлайна</td><td>В шкале UCI: 1 → 4 ч, 2 → 4 ч, 3 → 48 ч, 4 → 72 ч — подобраны перебором из [4, 8, 24, 48, 72] по совпадению доли <code>resolved_at ≤ opened_at + SLA</code> с фактической долей <code>made_sla</code> на train</td></tr>
           <tr><td>метрики на отложенной выборке (7 122 оценки)</td><td>recall просрочек 0.918, precision 0.662, F1 0.769, ложные срабатывания 0.151; lead time: медиана −91 ч, т.е. 84% срабатываний случаются уже после дедлайна (следствие протокола «t равномерно в открытие→решение»), среди сработавших заранее — за 13 ч до дедлайна. На подвыборке «оценка ещё до дедлайна»: recall 0.636, precision 0.295, F1 0.403</td></tr>
         </tbody>
       </table>
