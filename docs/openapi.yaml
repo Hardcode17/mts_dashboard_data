@@ -326,6 +326,31 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/SourceIncident'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /itsm_incident/{sys_id}/page:
+    get:
+      tags: [ITSM Общий контракт]
+      operationId: getItsmIncidentPage
+      summary: '5. Общий контракт: HTML-страница деталей инцидента в стиле SimpleOne (KAN-57)'
+      description: |
+        Самодостаточная HTML-страница (inline-CSS, без внешних CDN) с детальной информацией
+        по инциденту: бейджи статуса и приоритета, атрибуты, назначение, сроки и решение.
+        Используется кнопкой «Детальнее» (DASHBOARD_ITSM_LINK_TEMPLATE) и для демонстрации.
+        Всегда отражает текущее состояние мока, включая изменения, внесённые PATCH-запросом.
+      parameters:
+        - {name: sys_id, in: path, required: true, description: Внутренний системный идентификатор инцидента (sysId) или номер INC., schema: {type: string, minLength: 1}}
+      responses:
+        '200':
+          description: Страница деталей инцидента (text/html).
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Инцидент не найден; HTML-страница ошибки.
+          content:
+            text/html:
+              schema:
+                type: string
     patch:
       tags: [ITSM Общий контракт]
       operationId: patchItsmIncidentBySysId
