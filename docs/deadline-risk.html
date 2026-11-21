@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Прогноз нарушения срока · Cyber Garden 20</title>
+  <link rel="stylesheet" href="wiki.css">
+</head>
+<body>
+<a class="skip" href="#content">К содержанию</a>
+<div class="layout">
+  <aside>
+    <div class="rail">
+      <span class="context">Cyber Garden 20 · МТС</span>
+      <a class="project" href="index.html">Дашборд MCC</a>
+      <nav class="doc-nav" aria-label="Документы">
+        <p class="nav-title">Документы</p>
+        <ul>
+<li><a href="index.html">Обзор и вывод</a></li>
+<li><a href="index.html#difference">В чём отличие решения</a></li>
+<li><a href="requirements.html">Бизнес-ТЗ</a></li>
+<li><a href="proposals.html">Разбор предложений</a></li>
+<li><a href="decision-support.html">Поддержка решений</a></li>
+<li><a href="deadline-risk.html" aria-current="page">Прогноз нарушения срока</a></li>
+        </ul>
+      </nav>
+      <nav class="history-nav" aria-label="История решений">
+        <p class="nav-title">История решений</p>
+        <time class="date" datetime="2026-11-21">21 ноября 2026</time>
+        <ul>
+<li><a href="#idea">Идея и границы</a></li>
+<li><a href="#data">Данные для обучения</a></li>
+<li><a href="#features">Признаки и модель</a></li>
+<li><a href="#runtime">Запуск в продукте</a></li>
+<li><a href="#contract">Контракт API</a></li>
+<li><a href="#jira">Задачи</a></li>
+        </ul>
+      </nav>
+    </div>
+  </aside>
+  <main id="content" tabindex="-1">
+    <h1>Прогноз нарушения срока</h1>
+    <p>Оценка риска того, что инцидент <strong>не будет решён до дедлайна</strong>. Без ML-сервиса, без LLM и без нового микросервиса: модель — это логистическая регрессия, то есть взвешенная сумма нескольких признаков и порог. Коэффициенты обучаются офлайн на реальных исторических данных, а в продукт попадают как константы в существующий Spring Boot бэкенд.</p>
+    <p>Отдельная ветка <a href="https://sokolenkonikita12ru.atlassian.net/browse/KAN-46">KAN-46</a> «Оповестить о приближении срока» не входит в этот сценарий: оценка риска не заменяет дедлайн, не меняет приоритет и не дублирует предупреждение по остатку времени. Согласуется с <a href="decision-support.html">проверкой прогноза на истории</a>: в обучение попадают только случаи с известным сроком, признаки — только из данных, доступных на момент прогноза.</p>
+
+    <h2 id="idea">Идея и границы</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Вопрос</th><th scope="col">Решение</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Что предсказываем</th><td>Категорию риска нарушения дедлайна для активного инцидента: низкий / средний / высокий. Не вероятность, не новый дедлайн.</td></tr>
+          <tr><th scope="row">Какая модель</th><td>Логистическая регрессия: score = w0 + Σ wi·xi, пороги на категории. «Скорость исполнителя + приоритет + дедлайн + похожие задачи + веса» — это она и есть, в явном виде.</td></tr>
+          <tr><th scope="row">Где живёт в продукте</th><td>Один Java-класс в существующем бэкенде. В рантайме — сложение и умножение, ноль зависимостей, размер модели — несколько констант.</td></tr>
+          <tr><th scope="row">Кто решает</th><td>Координатор. Оценка не меняет дедлайн, приоритет и статус в ITSM.</td></tr>
+          <tr><th scope="row">Что не делаем</th><td>Не обучаем модель в рантайме, не заводим Python-сервис, не показываем проценты как «вероятность», не смешиваем с предупреждением по остатку времени (KAN-46).</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="data">Данные для обучения</h2>
+    <p>Тестовая выгрузка проекта — 44 инцидента, на ней эмпирические веса не выявить. Обучаем на публичном реальном наборе: <strong>UCI ML Repository, набор 498 «Incident Management Process (enriched event log)»</strong> — аудит-лог инцидентов реального инстанса ServiceNow: 24 918 инцидентов, 141 712 событий, 36 атрибутов, лицензия <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (источник указываем всегда). <a href="https://archive.ics.uci.edu/dataset/498/incident+management+process+enriched+event+log">Страница набора</a>.</p>
+    <p>Почему он подходит:</p>
+    <ul>
+      <li>готовая целевая переменная <code>made_sla</code> — «нарушен ли целевой SLA», разметка не нужна;</li>
+      <li>это лог <strong>событий</strong>, поэтому признаки берём строго «на момент t» — без подглядывания в будущее;</li>
+      <li>поля ложатся на наш формат (см. таблицу), шкалы приоритета 1–4 совпадают;</li>
+      <li>задачу на этих данных уже решали в статьях и Kaggle-ноутбуках — есть с чем сравнить метрики.</li>
+    </ul>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">UCI ServiceNow</th><th scope="col">Наш формат</th></tr></thead>
+        <tbody>
+          <tr><td><code>opened_at</code></td><td><code>submitDate</code></td></tr>
+          <tr><td><code>resolved_at</code> / <code>closed_at</code></td><td><code>completionDate</code></td></tr>
+          <tr><td><code>priority</code>, <code>impact</code>, <code>urgency</code> (1–4)</td><td><code>priorityId</code>, <code>impactId</code>, <code>urgencyId</code></td></tr>
+          <tr><td><code>assignment_group</code></td><td><code>assignedGroupName</code></td></tr>
+          <tr><td><code>assigned_to</code> / <code>resolved_by</code></td><td><code>assignedEmployee</code></td></tr>
+          <tr><td><code>location</code></td><td>площадка (в тестовой выгрузке отсутствует)</td></tr>
+          <tr><td><code>contact_type</code></td><td><code>receivingChannel</code></td></tr>
+          <tr><td><code>category</code> / <code>subcategory</code> / <code>u_symptom</code></td><td><code>service</code> / <code>productName</code> / <code>header</code></td></tr>
+          <tr><td><code>reopen_count</code>, <code>reassignment_count</code>, <code>sys_mod_count</code></td><td>новые признаки из истории (аналог наших историй статусов и дедлайнов)</td></tr>
+          <tr><td><code>made_sla</code></td><td><strong>целевая переменная: нарушен ли срок</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>Ограничения набора.</strong> Свободного текста нет (анонимизирован) — векторный поиск на этих данных не проверить, он остаётся отдельным экспериментом на своих кейсах. Явного поля «дедлайн» нет — восстанавливаем псевдо-дедлайн по SLA-матрице приоритета, как это устроено в реальных ITSM. Адаптированные записи помечаем <code>source: uci-servicenow-adapted</code> и не выдаём за выгрузку МТС; исходные материалы заказчика не изменяем.</p>
+
+    <h2 id="features">Признаки и модель</h2>
+    <p>Признаки вычисляются на момент оценки t. Целевая переменная — <code>made_sla</code> (для адаптированных данных — «completionDate позже псевдо-дедлайна»).</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Признак</th><th scope="col">Смысл</th></tr></thead>
+        <tbody>
+          <tr><td><code>x1 = медиана времени решения (сервис × приоритет × группа) / остаток до дедлайна</code></td><td>главный признак: «похожие задачи» в простейшей форме</td></tr>
+          <tr><td><code>x2</code> — дедлайн уже продлевался (да/нет или число раз к моменту t)</td><td>сильный сигнал из <code>incident_deadline_changes</code></td></tr>
+          <tr><td><code>x3</code> — число переназначений группы/исполнителя к моменту t</td><td>«болтание» карточки</td></tr>
+          <tr><td><code>x4</code> — число переоткрытий к моменту t</td><td>качество первого решения</td></tr>
+          <tr><td><code>x5</code> — часы без смены статуса</td><td>застрявшая карточка</td></tr>
+          <tr><td><code>x6</code> — открытых карточек у исполнителя</td><td>загруженность; персональная скорость включается только при достаточной истории (≥ 10 задач), иначе fallback на группу</td></tr>
+          <tr><td><code>x7</code> — приоритет (1–4)</td><td>учитываем корреляцию с дедлайном: сначала проверяем на истории, что не считаем одно и то же дважды</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>Обучение (офлайн, KAN-81).</strong> Python-ноутбук: логистическая регрессия из sklearn, разбиение строго по времени (обучение на ранних инцидентах, проверка на поздних). Метрики: полнота пойманных просрочек, доля ложных срабатываний, за сколько времени до дедлайна предупреждает. Обязательное сравнение с бейзлайнами: «осталось &lt; N часов» и медиана по <code>сервис × приоритет × группа</code>. <strong>Правило решения: если регрессия не бьёт медианный бейзлайн заметно — в продукт идёт бейзлайн.</strong></p>
+    <p><strong>Веса после обучения (результат <a href="https://sokolenkonikita12ru.atlassian.net/browse/KAN-81">KAN-81</a>: UCI 498, 23 323 инцидента с известным решением, разбиение по времени 70/30, seed 42):</strong></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Коэффициент</th><th scope="col">Значение</th></tr></thead>
+        <tbody>
+          <tr><td><code>w0</code> (интерсепт)</td><td>4.379061</td></tr>
+          <tr><td><code>w1</code> — медиана (сервис × приоритет × группа) / остаток до дедлайна</td><td>0.010472</td></tr>
+          <tr><td><code>w2</code> — sys_mod_count на момент t</td><td>0.167612</td></tr>
+          <tr><td><code>w3</code> — reassignment_count на момент t</td><td>−0.030004</td></tr>
+          <tr><td><code>w4</code> — reopen_count на момент t</td><td>0.423970</td></tr>
+          <tr><td><code>w5</code> — часы без смены статуса</td><td>0.033348</td></tr>
+          <tr><td><code>w6</code> — открытые карточки у исполнителя</td><td>0.007605</td></tr>
+          <tr><td><code>w7</code> — приоритет (1–4)</td><td>−2.089877</td></tr>
+          <tr><td>пороги категорий</td><td><code>medium = −1.2862</code>, <code>high = −0.9138</code> (подобраны на train под бюджет ~20% ложных срабатываний на карточку-не-просрочку)</td></tr>
+          <tr><td>SLA-часы псевдо-дедлайна</td><td>priority 1 → 4 ч, 2 → 4 ч, 3 → 48 ч, 4 → 72 ч — подобраны перебором из [4, 8, 24, 48, 72] по совпадению доли <code>resolved_at ≤ opened_at + SLA</code> с фактической долей <code>made_sla</code> на train</td></tr>
+          <tr><td>метрики на отложенной выборке (7 122 оценки)</td><td>recall просрочек 0.918, precision 0.662, F1 0.769, ложные срабатывания 0.151; lead time: медиана −91 ч, т.е. 84% срабатываний случаются уже после дедлайна (следствие протокола «t равномерно в открытие→решение»), среди сработавших заранее — за 13 ч до дедлайна. На подвыборке «оценка ещё до дедлайна»: recall 0.636, precision 0.295, F1 0.403</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>Экспериментальный итог: регрессия не бьёт бейзлайны заметно — фиксируем честно.</strong> Бейзлайн A «до дедлайна &lt; 33 ч» (порог N подобран на train под тот же бюджет): recall 0.925, precision 0.671, F1 0.778 при 14.6% ложных срабатываний — <em>лучший результат из всех</em>. Бейзлайн B с множителем (медиана × 0.50 &gt; остатка): recall 0.922, F1 0.715 при 21.2% ложных. Регрессия (recall 0.918, F1 0.769) формально обходит B по F1, но не добирает ни +5 п.п. recall, ни превосходства над A. На подвыборке «оценка до дедлайна» картина та же: A — F1 0.427, регрессия — 0.403, B tuned — 0.325. Главный сигнал в этих данных — сам остаток времени до дедлайна.</p>
+    <p><strong>Продуктовое решение (22 ноября 2026): дефолтный режим в KAN-82 — регрессия.</strong> Разница с порогом копеечная (F1 0.769 против 0.778 на UCI), зато регрессия оценивает <em>комбинацию</em> факторов — переназначения, застревание в статусе, нагрузку исполнителя, продления — и способна поднять «Высокий риск» заранее, а не только по остатку часов; основания оценки при этом содержательнее. Пороговый режим «остаток &lt; N часов» (N пересчитывается на реальной истории МТС) остаётся запасным переключателем в конфиге. При появлении реальной истории МТС: переобучить веса скриптом <code>tools/train_deadline_risk.py</code> и сравнить режимы ещё раз — Java-скоринг воспроизводит веса по <code>tools/deadline_risk_weights.json</code> без стандартизации (клампы признаков зафиксированы там же), замена — правка конфига.</p>
+
+    <h2 id="runtime">Запуск в продукте</h2>
+    <p>Обучение и эксплуатация разделены:</p>
+    <pre><code>ОФЛАЙН (раз в итерацию)                      ПРОД (существующий Spring Boot)
+Python-ноутбук: обучение
+→ коэффициенты w0..w7, пороги    ───────►   class DeadlineRiskScorer {
+   (числа в PR + в конфиг)                     // веса из application-конфига
+                                              double score(features)
+                                            }</code></pre>
+    <ul>
+      <li>Скоринг вызывается в существующем фоновом контуре при публикации снапшота ITSM (<code>ItsmSnapshotPublished</code>) — для активных инцидентов с дедлайном; отдельной очереди и pgvector не нужно.</li>
+      <li>Режим по умолчанию — <strong>regression</strong> (решение команды, см. вердикт выше); <code>threshold</code> — запасной, переключается конфигом одной строкой.</li>
+      <li>Для карточек без дедлайна риск не считается (<code>risk: unknown</code>).</li>
+      <li>Обновление весов — перезапуск офлайн-ноутбука и правка конфига; когда появится реальная история МТС, переобучаем на ней, прод-код не меняется.</li>
+      <li>В карточке — категория и список оснований с числами. Оценка не меняет дедлайн и приоритет.</li>
+    </ul>
+
+    <h2 id="contract">Контракт API (KAN-82 → KAN-83)</h2>
+    <p>Риск отдаётся в составе существующей карточки инцидента, отдельный микросервис не заводится.</p>
+    <pre><code>"deadlineRisk": {
+  "risk": "high",              // low | medium | high | unknown
+  "evaluatedAt": "2026-11-21T10:00:00Z",
+  "reasons": [
+    { "code": "group_median_exceeds",
+      "text": "Медиана группы решения 6.0 ч, до дедлайна 2.1 ч" },
+    { "code": "deadline_extended",
+      "text": "Дедлайн уже продлевался 1 раз" }
+  ],
+  "score": 0.83                // только для отладки, в UI не показывать
+}</code></pre>
+    <ul>
+      <li><code>risk: unknown</code> — нет дедлайна, данных группы или оценка недоступна; карточку не блокирует.</li>
+      <li><code>reasons</code> — человекочитаемые основания с числами; <code>score</code> наружу не интерпретировать как вероятность.</li>
+      <li>Фронт: бейдж с цветовой кодировкой по существующей палитре, раскрывающийся список оснований, состояния «риск неизвестен» и «анализ недоступен». Предупреждение о приближении срока (KAN-46) отображается рядом, но отдельно.</li>
+    </ul>
+
+    <h2 id="jira">Задачи</h2>
+    <p>Сквозная флика в трёх репозиториях, эпик <a href="https://sokolenkonikita12ru.atlassian.net/browse/KAN-80">KAN-80</a>:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Задача</th><th scope="col">Репозиторий</th><th scope="col">Суть</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://sokolenkonikita12ru.atlassian.net/browse/KAN-81">KAN-81</a></td><td>data</td><td>Обучение на UCI ServiceNow, адаптер в наш формат, веса и метрики</td></tr>
+          <tr><td><a href="https://sokolenkonikita12ru.atlassian.net/browse/KAN-82">KAN-82</a></td><td>backend</td><td>DeadlineRiskScorer в существующем Spring Boot, пересчёт при снапшоте, поле в API</td></tr>
+          <tr><td><a href="https://sokolenkonikita12ru.atlassian.net/browse/KAN-83">KAN-83</a></td><td>frontend</td><td>Бейдж риска и обоснование в карточке</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Зависимости: KAN-81 blocks KAN-82 blocks KAN-83. Backend может начинать с placeholder-весов в конфиге по контракту выше; фронт работает по тому же контракту.</p>
+  </main>
+</div>
+</body>
+</html>

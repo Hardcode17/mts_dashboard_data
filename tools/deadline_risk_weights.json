@@ -1,0 +1,156 @@
+{
+  "model": "logistic regression (sklearn, penalty=None, без стандартизации)",
+  "scoring": "score = w0 + w1*x1 + ... + w7*x7; risk = high, если score >= thresholds.high; medium, если >= thresholds.medium; иначе low",
+  "w0": 4.379061,
+  "w1": 0.010472,
+  "w2": 0.167612,
+  "w3": -0.030004,
+  "w4": 0.42397,
+  "w5": 0.033348,
+  "w6": 0.007605,
+  "w7": -2.089877,
+  "features": {
+    "x1": "medianResolutionHours(category x priority x assignment_group, train split) / max(deadline - t, 0.25h)",
+    "x2": "sys_mod_count на момент t (proxy переносов дедлайна/пересоздания)",
+    "x3": "reassignment_count на момент t",
+    "x4": "reopen_count на момент t",
+    "x5": "часы от последней смены incident_state до t",
+    "x6": "число открытых инцидентов у assigned_to на момент t",
+    "x7": "priority (1..4)"
+  },
+  "featureClamps": {
+    "x1": [
+      0.0,
+      100.0
+    ],
+    "x2": [
+      0.0,
+      200.0
+    ],
+    "x3": [
+      0.0,
+      50.0
+    ],
+    "x4": [
+      0.0,
+      20.0
+    ],
+    "x5": [
+      0.0,
+      2160.0
+    ],
+    "x6": [
+      0.0,
+      100.0
+    ],
+    "x7": [
+      1.0,
+      4.0
+    ]
+  },
+  "minRemainingHoursForX1": 0.25,
+  "thresholds": {
+    "medium": -1.286237,
+    "high": -0.913755
+  },
+  "slaHoursByPriority": {
+    "1": 4,
+    "2": 4,
+    "3": 48,
+    "4": 72
+  },
+  "mediansSource": "train split",
+  "mediansFile": "tools/deadline_risk_medians.json",
+  "trainedOn": "UCI ML Repository #498 Incident Management Process (enriched event log), CC BY 4.0; адаптация source: uci-servicenow-adapted",
+  "seed": 42,
+  "fprBudget": 0.2,
+  "metrics": {
+    "trainFprAtHigh": 0.2001,
+    "test": {
+      "flagged": 2404,
+      "recallViolations": 0.9175,
+      "precision": 0.6618,
+      "f1": 0.769,
+      "falsePositiveRate": 0.1509,
+      "leadTimeMedianH": -91.22,
+      "leadTimeMedianBeforeDeadlineH": 13.0,
+      "shareFlaggedAfterDeadline": 0.8441
+    },
+    "testBeforeDeadline": {
+      "flagged": 841,
+      "recallViolations": 0.6359,
+      "precision": 0.2949,
+      "f1": 0.4029,
+      "falsePositiveRate": 0.1148,
+      "leadTimeMedianH": 13.0,
+      "leadTimeMedianBeforeDeadlineH": 13.0,
+      "shareFlaggedAfterDeadline": 0.0
+    },
+    "baselineA_deadlineRemainingLtN": {
+      "flagged": 2388,
+      "recallViolations": 0.9245,
+      "precision": 0.6713,
+      "f1": 0.7778,
+      "falsePositiveRate": 0.1457,
+      "leadTimeMedianH": -90.05,
+      "leadTimeMedianBeforeDeadlineH": 13.5,
+      "shareFlaggedAfterDeadline": 0.8384,
+      "NHours": 32.92,
+      "beforeDeadline": {
+        "flagged": 822,
+        "recallViolations": 0.6641,
+        "precision": 0.3151,
+        "f1": 0.4274,
+        "falsePositiveRate": 0.109,
+        "leadTimeMedianH": 13.5,
+        "leadTimeMedianBeforeDeadlineH": 13.5,
+        "shareFlaggedAfterDeadline": 0.0
+      }
+    },
+    "baselineB_medianGtRemaining": {
+      "flagged": 3077,
+      "recallViolations": 0.9435,
+      "precision": 0.5317,
+      "f1": 0.6801,
+      "falsePositiveRate": 0.2674,
+      "leadTimeMedianH": -87.06,
+      "leadTimeMedianBeforeDeadlineH": 20.26,
+      "shareFlaggedAfterDeadline": 0.8215,
+      "beforeDeadline": {
+        "flagged": 1511,
+        "recallViolations": 0.7487,
+        "precision": 0.1932,
+        "f1": 0.3072,
+        "falsePositiveRate": 0.236,
+        "leadTimeMedianH": 20.26,
+        "leadTimeMedianBeforeDeadlineH": 20.26,
+        "shareFlaggedAfterDeadline": 0.0
+      }
+    },
+    "baselineB_tunedMultiplier": {
+      "flagged": 2739,
+      "recallViolations": 0.9216,
+      "precision": 0.5834,
+      "f1": 0.7145,
+      "falsePositiveRate": 0.2118,
+      "leadTimeMedianH": -90.37,
+      "leadTimeMedianBeforeDeadlineH": 18.14,
+      "shareFlaggedAfterDeadline": 0.8411,
+      "k": 0.5045,
+      "beforeDeadline": {
+        "flagged": 1173,
+        "recallViolations": 0.6513,
+        "precision": 0.2165,
+        "f1": 0.325,
+        "falsePositiveRate": 0.1779,
+        "leadTimeMedianH": 18.14,
+        "leadTimeMedianBeforeDeadlineH": 18.14,
+        "shareFlaggedAfterDeadline": 0.0
+      }
+    },
+    "note": "testBeforeDeadline — метрики на подвыборке проб, где момент оценки t ещё до дедлайна; это продуктовая метрика «успели предупредить заранее»"
+  },
+  "verdict": "regression does not clearly beat the median baseline",
+  "defaultMode": "regression",
+  "verdictRule": "regression Wins, если при том же бюджете FPR ~20% recall выше бейзлайна B tuned минимум на 0.05 и F1 выше минимум на 0.03"
+}
