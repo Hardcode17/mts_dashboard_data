@@ -37,6 +37,7 @@ import pandas as pd
 MISSING = "?"
 SLA_CANDIDATES_H = [4, 8, 24, 48, 72]
 TRAIN_FRACTION = 0.70
+MTS_PRIORITY_LABELS = {1: "Низкий", 2: "Средний", 3: "Высокий", 4: "Наивысший"}
 
 def parse_label(series: pd.Series) -> pd.Series:
     """'3 - Moderate' -> 'Moderate' (подпись приоритета/влияния из исходника)."""
@@ -170,6 +171,7 @@ def fit_sla_hours(inc: pd.DataFrame) -> tuple[dict, dict]:
 
 
 def incident_to_mts_json(row: pd.Series) -> dict:
+    priority_id = 5 - int(row["priority_n"])
     state = STATE_MAP.get(row["incident_state"], STATE_UNKNOWN)
     assignee = row["assigned_to"]
     if pd.isna(assignee):
@@ -177,8 +179,8 @@ def incident_to_mts_json(row: pd.Series) -> dict:
     return {
         "id": row["number"],
         "header": None if pd.isna(row["u_symptom"]) else row["u_symptom"],
-        "priorityId": int(row["priority_n"]),
-        "priority": row["priority_label"],
+        "priorityId": priority_id,
+        "priority": MTS_PRIORITY_LABELS[priority_id],
         "impactId": int(row["impact_n"]),
         "impact": row["impact_label"],
         "urgencyId": int(row["urgency_n"]),
