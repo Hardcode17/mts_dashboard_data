@@ -1,0 +1,22 @@
+name: routing-advisor
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.1-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-routing_advisor}"
+      POSTGRES_USER: "${POSTGRES_USER:-routing_advisor}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the environment or a local .env file}"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5447}:5432"
+    volumes:
+      - routing_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  routing_pgdata:
