@@ -21,3 +21,9 @@ CREATE TABLE IF NOT EXISTS routing_advisor.owners (
     owner_group text NOT NULL CHECK (btrim(owner_group) <> ''),
     PRIMARY KEY (service, site, owner_group)
 );
+
+CREATE TABLE IF NOT EXISTS routing_advisor.seed_state (
+    singleton boolean PRIMARY KEY CHECK (singleton),
+    model_id text NOT NULL,
+    fixture_id text NOT NULL
+);

@@ -1,5 +1,6 @@
 """Data-only KAN-74 prototype. No network calls to ITSM or assignment writes."""
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -58,12 +59,28 @@ def vector_literal(values):
     return "[" + ",".join(map(str, values)) + "]"
 
 
+def fixture_id(fixture):
+    corpus = json.dumps([fixture["history"], fixture["owners"]], sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(corpus.encode("utf-8")).hexdigest()
+
+
+def embedding_model_id(model_path):
+    if model_path == MODEL:
+        return f"{MODEL}@{MODEL_REVISION}"
+    folder = Path(model_path).resolve()
+    files = ("config.json", "model.safetensors", "tokenizer.json", "tokenizer_config.json")
+    digest = hashlib.sha256()
+    for name in files:
+        with (folder / name).open("rb") as stream:
+            digest.update(hashlib.file_digest(stream, "sha256").digest())
+    return f"local:{digest.hexdigest()}"
+
+
 class E5Embedder:
-    def __init__(self):
+    def __init__(self, model_path):
         import torch
         from transformers import AutoModel, AutoTokenizer
 
-        model_path = os.environ.get("ROUTING_MODEL", MODEL)
         revision = {"revision": MODEL_REVISION} if model_path == MODEL else {}
         self.torch = torch
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, **revision)
@@ -172,13 +189,13 @@ def baseline(query, history):
     ) if count > 0][:RESULT_LIMIT]
 
 
-def seed(conn, fixture, embedder):
+def seed(conn, fixture, embedder, model_id):
     history = fixture["history"]
     embeddings = embedder.encode(history, "passage")
     with conn.transaction(), conn.cursor() as cur:
+        # Serialize schema creation as well as corpus replacement on first use.
+        cur.execute("SELECT pg_advisory_xact_lock(hashtext('kan-74 routing advisor seed'))")
         cur.execute((ROOT / "schema.sql").read_text(encoding="utf-8"))
-        # Serialize replacements so concurrent runs cannot mix two fixtures.
-        cur.execute("LOCK TABLE routing_advisor.history, routing_advisor.owners IN EXCLUSIVE MODE")
         cur.execute("DELETE FROM routing_advisor.history")
         cur.execute("DELETE FROM routing_advisor.owners")
         cur.executemany(
@@ -197,7 +214,23 @@ def seed(conn, fixture, embedder):
             [(owner["service"].strip(), owner["site"].strip(), owner["group"].strip())
              for owner in fixture["owners"]],
         )
+        cur.execute(
+            """INSERT INTO routing_advisor.seed_state VALUES (true, %s, %s)
+               ON CONFLICT (singleton) DO UPDATE
+               SET model_id = EXCLUDED.model_id, fixture_id = EXCLUDED.fixture_id""",
+            (model_id, fixture_id(fixture)),
+        )
     return {"history_count": len(history), "owner_rows": len(fixture["owners"])}
+
+
+def check_seed(conn, model_id, expected_fixture_id=None):
+    state = conn.execute(
+        "SELECT model_id, fixture_id FROM routing_advisor.seed_state"
+    ).fetchone()
+    if state is None or state["model_id"] != model_id:
+        raise ValueError("corpus uses a different embedding model or is empty; run seed first")
+    if expected_fixture_id is not None and state["fixture_id"] != expected_fixture_id:
+        raise ValueError("evaluation fixture differs from the seeded corpus; seed the selected fixture first")
 
 
 def evaluate(conn, fixture, embedder, threshold):
@@ -266,7 +299,9 @@ def main(argv=None):
     dsn = os.environ.get("ROUTING_DSN")
     if not dsn:
         parser.error("set ROUTING_DSN to a dedicated prototype database")
+    model_path = os.environ.get("ROUTING_MODEL", MODEL)
     try:
+        model_id = embedding_model_id(model_path)
         fixture = load_fixture(args.fixture)
         query = next((row for row in fixture["queries"] if row["id"] == args.id), None)
         if args.command == "show" and not query:
@@ -274,9 +309,11 @@ def main(argv=None):
         with psycopg.connect(dsn, row_factory=dict_row) as conn:
             if args.command != "seed":
                 conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            embedder = E5Embedder()
+                expected = fixture_id(fixture) if args.command == "evaluate" else None
+                check_seed(conn, model_id, expected)
+            embedder = E5Embedder(model_path)
             if args.command == "seed":
-                result = seed(conn, fixture, embedder)
+                result = seed(conn, fixture, embedder, model_id)
             elif args.command == "evaluate":
                 result = evaluate(conn, fixture, embedder, args.threshold)
             else:
