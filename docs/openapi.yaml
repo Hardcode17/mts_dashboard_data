@@ -1,0 +1,781 @@
+openapi: 3.1.0
+info:
+  title: Рабочее место координатора MCC
+  version: 0.1.0
+  description: |
+    Контракт ядра (KAN-15, KAN-20). ITCS передаёт полный снимок ITSM; координатор читает
+    опубликованное состояние. Официальные статус, приоритет, срок, команда и исполнитель
+    меняются в ITSM. «Детальнее» открывает `itsmUrl` конкретного INC. Дашборд увидит
+    изменение после применения следующей версии; открытие ссылки не меняет INC или задачу.
+
+    `sourceVersion` задаёт порядок снимков одного источника, `revision` — опубликованную
+    версию на сервере, `eventSeq` — позицию в журнале, `eventId` — идентификатор события
+    для подтверждения. Ни время завершения обработки, ни номер INC не заменяют эти ключи.
+
+    Приём, чтение пакета, статус снимка и /health сверены с Hardcode17/mts_dashboard_backend
+    (379b0ad). Пользовательский Bearer и остальные операции — целевой контракт по Jira,
+    а не перечень развёрнутых контроллеров. Основания: docs/requirements.html,
+    docs/database/mts_database_v5_documentation.md (§8) в Hardcode17/mts_dashboard_data.
+security:
+  - coordinatorBearer: []
+tags:
+  - {name: Импорт, description: Машинный клиент ITCS · KAN-21/27/53/54/55}
+  - {name: Экран, description: Группы и карточка · KAN-18/20/23/26}
+  - {name: События, description: Журнал и подтверждения смены · KAN-25/28/29}
+  - {name: Координация, description: Личные настройки и внутренние задачи · KAN-24/30–34/37/45}
+  - {name: Исследование, description: Асинхронный анализ по INC · KAN-39/40}
+  - {name: Сервис}
+paths:
+  /api/integrations/itsm/batches:
+    post:
+      operationId: receiveItsmSnapshot
+      tags: [Импорт]
+      summary: Принять полный снимок ITSM
+      description: |
+        Каждые 30 секунд — новый ключ и версия, даже если данные не изменились. Тело —
+        один JSON-массив, включая неизменившиеся INC; допустим `[]`. При повторной доставке
+        передаются те же заголовки и те же байты. Один ключ и одно наблюдение дают один batchId.
+        До ответа проверяются метаданные, размер и синтаксис массива. После фиксации пакета
+        worker проверяет записи: повтор id, неизвестный статус или неверное поле отклоняют
+        весь снимок; предыдущая опубликованная версия остаётся доступной. Начальный снимок
+        задаёт базу без оповещений; исчезновение строки не означает решение или удаление INC.
+      security: [{machineBearer: []}]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Канонический UUID пакета; возвращается как batchId.
+          schema: {$ref: '#/components/schemas/BatchId'}
+          example: 34d4c330-e29a-480a-b91e-1544672b2051
+        - name: X-Source-Id
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[!-~]{1,128}$'}
+          example: itcs-demo
+        - name: X-Source-Version
+          in: header
+          required: true
+          description: Положительный int64 в десятичной записи без знака и ведущих нулей.
+          schema: {type: integer, format: int64, minimum: 1, maximum: 9223372036854775807}
+          example: 101
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: {$ref: '#/components/schemas/SourceIncident'}
+            examples:
+              initial:
+                summary: Версия 101 — две активные карточки
+                value:
+                  - {id: INC000001, stateEnum: Assigned, priorityId: 3, submitDate: '2026-11-21T10:00:00Z', deadline: null, solution: null, productName: Витрина, service: Каталог, header: Сбой каталога, assignedGroupName: Поддержка каталога}
+                  - &unchanged {id: INC000002, stateEnum: WorkInProgress, priorityId: 2, submitDate: '2026-11-21T09:58:00Z', deadline: null, solution: null, productName: Оплата, service: Касса, header: Задержка оплаты, assignedGroupName: Поддержка оплаты}
+              next:
+                summary: Версия 102 — новый ключ; изменился только INC000001, INC000002 передаётся снова
+                value:
+                  - {id: INC000001, stateEnum: Assigned, priorityId: 4, submitDate: '2026-11-21T10:00:00Z', deadline: null, solution: null, productName: Витрина, service: Каталог, header: Сбой каталога, assignedGroupName: КЦ ИТ Координаторы Массовых Инцидентов}
+                  - *unchanged
+      responses:
+        '202':
+          description: Пакет надёжно сохранён (или уже принят ранее). Это не подтверждение применения.
+          headers:
+            Location:
+              required: true
+              schema: {type: string, format: uri-reference}
+              example: /api/integrations/itsm/batches/34d4c330-e29a-480a-b91e-1544672b2051
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [batchId]
+                properties:
+                  batchId: {$ref: '#/components/schemas/BatchId'}
+              example: {batchId: 34d4c330-e29a-480a-b91e-1544672b2051}
+        '400':
+          description: ITSM_INVALID_IDEMPOTENCY_KEY, ITSM_INVALID_SOURCE_ID, ITSM_INVALID_SOURCE_VERSION или ITSM_INVALID_PAYLOAD.
+          content: &errorBody {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+        '401': {$ref: '#/components/responses/MachineUnauthorized'}
+        '403': {$ref: '#/components/responses/MachineForbidden'}
+        '409':
+          description: ITSM_IDEMPOTENCY_CONFLICT (ключ тот же, но байты или метаданные другие) либо ITSM_SOURCE_VERSION_CONFLICT (другой ключ на ту же версию источника).
+          content: *errorBody
+        '413':
+          description: REQUEST_BODY_TOO_LARGE — превышен настроенный размер тела (по умолчанию 1 МБ).
+          content: *errorBody
+        '415':
+          description: UNSUPPORTED_MEDIA_TYPE — требуется application/json.
+          content: *errorBody
+        '429':
+          description: ITSM_INTAKE_QUEUE_FULL — очередь заполнена; повторить доставку с прежним ключом и телом.
+          content: *errorBody
+  /api/integrations/itsm/batches/{batchId}:
+    get:
+      tags: [Импорт]
+      operationId: getItsmBatch
+      summary: Проверить обработку по Location
+      security: [{machineBearer: []}]
+      parameters:
+        - {name: batchId, in: path, required: true, schema: {$ref: '#/components/schemas/BatchId'}}
+      responses:
+        '200':
+          description: Метаданные без исходного тела; при ошибке доступна диагностика.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [batchId, sourceId, sourceVersion, receivedAt, status, diagnostic, nextAttemptAt]
+                properties:
+                  batchId: {$ref: '#/components/schemas/BatchId'}
+                  sourceId: {type: string}
+                  sourceVersion: {type: integer, format: int64, minimum: 1}
+                  receivedAt: {$ref: '#/components/schemas/Time'}
+                  status: {type: string, enum: [RECEIVED, PROCESSING, SUCCEEDED, FAILED]}
+                  diagnostic: {$ref: '#/components/schemas/OptionalText'}
+                  nextAttemptAt: {$ref: '#/components/schemas/OptionalTime'}
+              example: {batchId: 34d4c330-e29a-480a-b91e-1544672b2051, sourceId: itcs-demo, sourceVersion: 101, receivedAt: '2026-11-21T10:00:01Z', status: SUCCEEDED, diagnostic: null, nextAttemptAt: null}
+        '401': {$ref: '#/components/responses/MachineUnauthorized'}
+        '403': {$ref: '#/components/responses/MachineForbidden'}
+        '404': {description: ITSM_BATCH_NOT_FOUND — неизвестный batchId., content: *errorBody}
+  /api/snapshot/status:
+    get:
+      tags: [Экран]
+      operationId: getSnapshotStatus
+      summary: Узнать свежесть опубликованных данных
+      responses:
+        '200':
+          description: stale=true до первого успеха, пока последний пакет не применён или когда истёк интервал свежести (по умолчанию 90 секунд).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lastReceivedAt, lastSuccessAt, revision, stale]
+                properties:
+                  lastReceivedAt: {$ref: '#/components/schemas/OptionalTime'}
+                  lastSuccessAt: {$ref: '#/components/schemas/OptionalTime'}
+                  revision: {$ref: '#/components/schemas/Revision'}
+                  stale: {type: boolean}
+              examples:
+                firstPending:
+                  value: {lastReceivedAt: '2026-11-21T10:00:01Z', lastSuccessAt: null, revision: null, stale: true}
+                stale:
+                  value: {lastReceivedAt: '2026-11-21T10:00:31Z', lastSuccessAt: '2026-11-21T10:00:03Z', revision: 1, stale: true}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/incidents:
+    get:
+      tags: [Экран]
+      operationId: listIncidents
+      summary: Получить список INC и счётчики четырёх системных групп
+      description: |
+        q ищет подстроку без учёта регистра в номере, заголовке и описании. Фильтры
+        сочетаются по И. Счётчики учитывают фильтры до выбора group. items содержит
+        уникальные INC (без group — по всем статусам), у каждой строки перечислены
+        её группы. Порядок: updatedAt по убыванию, затем id по возрастанию.
+        Активны Assigned и WorkInProgress. critical — активный P4; coordinators —
+        активный или Research на «КЦ ИТ Координаторы Массовых Инцидентов», с исполнителем
+        или без; high — активный P3; research — Research. На базовых 44 INC: 0/2/1/5.
+      parameters:
+        - {name: group, in: query, schema: {$ref: '#/components/schemas/Group'}}
+        - {name: q, in: query, schema: {type: string}}
+        - {name: assignedGroupName, in: query, schema: {type: string}}
+        - {name: productName, in: query, schema: {type: string}}
+        - {name: stateEnum, in: query, schema: {$ref: '#/components/schemas/State'}}
+        - {name: priorityId, in: query, schema: {$ref: '#/components/schemas/Priority'}}
+        - {name: deadlineState, in: query, schema: {type: string, enum: [overdue, withinDeadline, unspecified, inactive]}, description: При null — unspecified; при заданном сроке у неактивной карточки — inactive.}
+      responses:
+        '200':
+          description: Список и счётчики на одну опубликованную версию.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision, eventSeq, counts, items]
+                properties:
+                  revision: {$ref: '#/components/schemas/Revision'}
+                  eventSeq: {$ref: '#/components/schemas/Cursor'}
+                  counts:
+                    type: object
+                    required: [critical, coordinators, high, research]
+                    properties:
+                      critical: &count {type: integer, minimum: 0}
+                      coordinators: *count
+                      high: *count
+                      research: *count
+                  items: {type: array, items: {$ref: '#/components/schemas/Incident'}}
+              examples:
+                criticalFilter:
+                  summary: При group=critical единственный показанный INC входит в две группы
+                  value:
+                    revision: 2
+                    eventSeq: 8
+                    counts: {critical: 1, coordinators: 1, high: 0, research: 0}
+                    items:
+                      - &card
+                        id: INC000001
+                        header: Сбой каталога
+                        description: Не обновляются цены
+                        productName: Витрина
+                        service: Каталог
+                        submitDate: '2026-11-21T10:00:00Z'
+                        updatedAt: '2026-11-21T10:00:33Z'
+                        stateEnum: Assigned
+                        priorityId: 4
+                        assignedGroupName: КЦ ИТ Координаторы Массовых Инцидентов
+                        assignedEmployee: null
+                        deadline: null
+                        remainingSeconds: null
+                        overdue: false
+                        groups: [critical, coordinators]
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/incidents/{id}:
+    parameters: [{$ref: '#/components/parameters/IncidentId'}]
+    get:
+      tags: [Экран]
+      operationId: getIncident
+      summary: Открыть карточку с переходом «Детальнее» в ITSM
+      responses:
+        '200':
+          description: Ссылка на внешний INC строится по настроенному шаблону и номеру. В примере — демоцель.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision, incident, itsmUrl, itsmDemo, meetingUrl]
+                properties:
+                  revision: {$ref: '#/components/schemas/Revision'}
+                  incident: {$ref: '#/components/schemas/Incident'}
+                  itsmUrl: {type: string, format: uri, description: Ссылка на карточку INC в ITSM; не productUrl.}
+                  itsmDemo: {type: boolean, description: Пометка демонстрационной цели в интерфейсе.}
+                  meetingUrl: {type: [string, 'null'], format: uri, description: Локально сохранённая ссылка МТС Линк.}
+              example: {revision: 2, incident: *card, itsmUrl: 'https://itsm.example.org/incidents/INC000001', itsmDemo: true, meetingUrl: null}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/events:
+    get:
+      tags: [События]
+      operationId: pollEvents
+      summary: Прочитать следующую страницу событий смены
+      description: |
+        Вернуть события с eventSeq строго больше after, в порядке возрастания. Следующий
+        запрос использует nextAfter (при пустой странице он равен after). Повтор курсора
+        не подтверждает события. pending — вся текущая очередь «Увидел», независимо
+        от курсора: после перезапуска экран восстанавливает и старые неподтверждённые события.
+        Если revision сменилась, перечитать список и открытую карточку, даже когда items
+        пуст: не каждое изменение создаёт оповещение. Причины одного изменения объединяются;
+        новый эпизод того же INC получает новый eventId.
+      parameters:
+        - {$ref: '#/components/parameters/After'}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: Новые события и общая очередь смены.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision, nextAfter, items, pending]
+                properties:
+                  revision: {$ref: '#/components/schemas/Revision'}
+                  nextAfter: {$ref: '#/components/schemas/Cursor'}
+                  items: {$ref: '#/components/schemas/Events'}
+                  pending: {$ref: '#/components/schemas/Events'}
+              example:
+                revision: 3
+                nextAfter: 9
+                items:
+                  - &alert {eventId: evt-8, eventSeq: 8, id: INC000001, revision: 2, observedAt: '2026-11-21T10:00:33Z', reasons: [raisedToCritical, enteredCoordinators], requiresAck: true}
+                  - {eventId: evt-9, eventSeq: 9, id: INC000001, revision: 3, observedAt: '2026-11-21T10:01:03Z', reasons: [criticalResolved], requiresAck: false}
+                pending: [*alert]
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/events/ack:
+    post:
+      tags: [События]
+      operationId: acknowledgeEvents
+      summary: «Увидел» — подтвердить только показанные eventId
+      description: Общий для смены идемпотентный ack сохраняет первого автора и время. Новый C при ack(A,B) остаётся в очереди. Не принимает внутреннюю задачу.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [eventIds]
+              properties:
+                eventIds: {type: array, minItems: 1, uniqueItems: true, items: {type: string, minLength: 1}}
+            example: {eventIds: [evt-6, evt-7]}
+      responses:
+        '200':
+          description: Оставшаяся очередь после подтверждения.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pending]
+                properties:
+                  pending: {$ref: '#/components/schemas/Events'}
+              example: {pending: [*alert]}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: EVENT_NOT_FOUND — неизвестный eventId; весь набор оставлен без изменений., content: *errorBody}
+  /api/incidents/{id}/history:
+    parameters: [{$ref: '#/components/parameters/IncidentId'}]
+    get:
+      tags: [События]
+      operationId: getIncidentHistory
+      summary: Прочитать изменения одного INC после курсора
+      parameters:
+        - {$ref: '#/components/parameters/After'}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: По возрастанию eventSeq. При пустой странице nextAfter равен after.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nextAfter, items]
+                properties:
+                  nextAfter: {$ref: '#/components/schemas/Cursor'}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [eventSeq, kind, field, oldValue, newValue, sourceId, observedAt, sourceAt]
+                      properties:
+                        eventSeq: {$ref: '#/components/schemas/Cursor'}
+                        kind: {type: string, enum: [appeared, changed, missing]}
+                        field: {enum: [stateEnum, assignedGroupName, assignedEmployeeLogin, priorityId, deadline, solution, null]}
+                        oldValue: {type: [string, integer, 'null']}
+                        newValue: {type: [string, integer, 'null']}
+                        sourceId: {type: string}
+                        observedAt: {$ref: '#/components/schemas/Time'}
+                        sourceAt: {$ref: '#/components/schemas/OptionalTime'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/me:
+    get:
+      tags: [Координация]
+      operationId: getMe
+      summary: Получить локальный профиль по проверенным iss/sub
+      responses:
+        '200':
+          description: Активный профиль координатора (KAN-16/22).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, sub, login, displayName]
+                properties:
+                  id: {type: integer, format: int64}
+                  sub: {type: string}
+                  login: {type: string}
+                  displayName: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/me/groups:
+    get:
+      tags: [Координация]
+      operationId: getMyGroups
+      summary: Прочитать группы и доступность текущего координатора
+      responses:
+        '200':
+          description: Внутренние группы координатора.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Membership'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/me/groups/{groupId}/availability:
+    put:
+      tags: [Координация]
+      operationId: setMyAvailability
+      summary: Переключить свою доступность для новых задач в группе
+      parameters:
+        - {name: groupId, in: path, required: true, schema: {type: integer, format: int64}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [available]
+              additionalProperties: false
+              properties: {available: {type: boolean}}
+      responses:
+        '200':
+          description: Выбор сохранён; уже выданная задача остаётся у координатора.
+          content: {application/json: {schema: {$ref: '#/components/schemas/Membership'}}}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/coordination/tasks:
+    get:
+      tags: [Координация]
+      operationId: listCoordinationTasks
+      summary: Прочитать очередь своих групп или список «Мои задачи»
+      parameters:
+        - {name: scope, in: query, schema: {type: string, enum: [queue, mine], default: queue}}
+      responses:
+        '200':
+          description: Открытые внутренние задачи. В очереди без человека персонального таймера нет.
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Task'}}}}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/coordination/assignments/{assignmentId}/accept:
+    post:
+      tags: [Координация]
+      operationId: acceptMyAssignment
+      summary: Принять конкретное внутреннее назначение в работу
+      description: Для P4 принять нужно до expiresAt (60 секунд с назначения). Координатор остаётся занят до наблюдаемой передачи в ITSM.
+      parameters:
+        - {name: assignmentId, in: path, required: true, schema: {type: integer, format: int64}}
+      responses:
+        '200':
+          description: Задача после принятия.
+          content: {application/json: {schema: {$ref: '#/components/schemas/Task'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: ASSIGNMENT_EXPIRED — срок истёк или назначение уже заменено., content: *errorBody}
+  /api/incidents/{id}/meeting-link:
+    parameters: [{$ref: '#/components/parameters/IncidentId'}]
+    put:
+      tags: [Координация]
+      operationId: saveMeetingLink
+      summary: Сохранить или заменить локальную ссылку МТС Линк
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meetingUrl]
+              additionalProperties: false
+              properties: {meetingUrl: {type: string, format: uri, pattern: '^https?://'}}
+      responses:
+        '204': {description: Ссылка доступна в карточке и сохраняется при следующем импорте.}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/me/presets:
+    get:
+      tags: [Координация]
+      operationId: listMyPresets
+      summary: Прочитать свои пресеты фильтров
+      responses:
+        '200':
+          description: Пресеты пользователя; четыре системные группы существуют независимо.
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/SavedPreset'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Координация]
+      operationId: createMyPreset
+      summary: Создать личный пресет
+      requestBody: &presetBody
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PresetInput'}}}
+      responses:
+        '201':
+          description: Личный пресет создан.
+          content: {application/json: {schema: {$ref: '#/components/schemas/SavedPreset'}}}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/me/presets/{presetId}:
+    parameters:
+      - {name: presetId, in: path, required: true, schema: {type: integer, format: int64}}
+    put:
+      tags: [Координация]
+      operationId: replaceMyPreset
+      summary: Заменить имя и фильтры своего пресета
+      requestBody: *presetBody
+      responses:
+        '200':
+          description: Сохранённый пресет.
+          content: {application/json: {schema: {$ref: '#/components/schemas/SavedPreset'}}}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Координация]
+      operationId: deleteMyPreset
+      summary: Удалить свой пресет
+      responses:
+        '204': {description: Пресет удалён.}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/incidents/{id}/investigations:
+    parameters: [{$ref: '#/components/parameters/IncidentId'}]
+    post:
+      tags: [Исследование]
+      operationId: startInvestigation
+      summary: Запустить исследование выбранного INC на опубликованной версии
+      responses:
+        '202':
+          description: Запуск зарегистрирован; читать результат по Location.
+          headers:
+            Location: {required: true, schema: {type: string, format: uri-reference}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Investigation'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/incidents/{id}/investigations/{runId}:
+    parameters:
+      - {$ref: '#/components/parameters/IncidentId'}
+      - {name: runId, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [Исследование]
+      operationId: getInvestigation
+      summary: Прочитать результат с основаниями и недоступными источниками
+      responses:
+        '200':
+          description: Факты со ссылками на источники отделены от гипотезы.
+          content: {application/json: {schema: {$ref: '#/components/schemas/Investigation'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /health:
+    get:
+      tags: [Сервис]
+      operationId: health
+      summary: Проверить доступность приложения
+      security: []
+      responses:
+        '200':
+          description: Приложение отвечает.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service, timestamp, uptimeSeconds, javaVersion]
+                properties:
+                  status: {type: string, const: UP}
+                  service: {type: string}
+                  timestamp: {$ref: '#/components/schemas/Time'}
+                  uptimeSeconds: {type: integer, format: int64}
+                  javaVersion: {type: string}
+components:
+  securitySchemes:
+    machineBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak client credentials; ожидаемые iss, aud, azp машинного клиента и роль импорта (по умолчанию itsm:import).
+    coordinatorBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak Authorization Code + PKCE; допуск активного локального профиля по iss/sub. Клиент ITCS не получает личный профиль.
+  parameters:
+    IncidentId: {name: id, in: path, required: true, description: Строковый номер ITSM с ведущими нулями., schema: {$ref: '#/components/schemas/IncidentNumber'}}
+    After: {name: after, in: query, description: Исключительная нижняя граница eventSeq; без параметра читать с начала., schema: {type: integer, format: int64, minimum: 0, default: 0}}
+    Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+  responses:
+    MachineUnauthorized: {description: ITSM_MACHINE_AUTH_REQUIRED — отсутствует или невалиден машинный Bearer., content: *errorBody}
+    MachineForbidden: {description: ITSM_MACHINE_ACCESS_DENIED — нет права импорта или неверный клиент., content: *errorBody}
+    Unauthorized: {description: UNAUTHORIZED — отсутствует или невалиден пользовательский токен., content: *errorBody}
+    Forbidden: {description: FORBIDDEN — нет допуска к операции., content: *errorBody}
+    Invalid: {description: INVALID_REQUEST — ошибка параметра или тела., content: *errorBody}
+    NotFound: {description: RESOURCE_NOT_FOUND — запрошенный ресурс не найден., content: *errorBody}
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: string, description: Стабильный машинный код; указан у HTTP-ответа.}
+        message: {type: string}
+    BatchId: {type: string, format: uuid}
+    IncidentNumber: {type: string, minLength: 1, pattern: '\S', examples: [INC000001]}
+    Time: {type: string, format: date-time, description: Момент времени в UTC.}
+    OptionalTime: {type: [string, 'null'], format: date-time}
+    OptionalText: {type: [string, 'null']}
+    State: {type: string, enum: [Assigned, WorkInProgress, Resolved, Closed, Research]}
+    Priority: {type: integer, enum: [1, 2, 3, 4], description: От низкого (1) до наивысшего (4).}
+    Revision: {type: [integer, 'null'], format: int64, description: Версия публикации; null до первого успешного применения.}
+    Cursor: {type: integer, format: int64, minimum: 0}
+    SourceTime:
+      type: string
+      description: Время ITSM в UTC; без смещения также читается как UTC. Точность до микросекунд. Техническая дата 0001-01-01T00:00:00 нормализуется в null.
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6}0{0,3})?(?:Z|\+00:00)?$'
+    OptionalSourceTime:
+      anyOf: [{$ref: '#/components/schemas/SourceTime'}, {type: 'null'}]
+    SourceIncident:
+      type: object
+      description: |
+        Исходная строка выгрузки ITSM (46 полей описаны в §8 модели v5). Дополнительные
+        атрибуты допустимы. Канонический статус задаёт stateEnum, а не числовой stateId.
+        В активной записи solution нормализуется в null; для завершённой записи нужны
+        фактические completionDate и непустой solution. submitDate не может быть технической датой.
+      required: [id, stateEnum, priorityId, submitDate, solution]
+      additionalProperties: true
+      properties:
+        id: {$ref: '#/components/schemas/IncidentNumber'}
+        sysId: {type: string}
+        state: {type: string}
+        stateEnum: {$ref: '#/components/schemas/State'}
+        stateId: {type: integer}
+        stateReason: {$ref: '#/components/schemas/OptionalText'}
+        stateReasonId: {$ref: '#/components/schemas/OptionalText'}
+        submitDate: {$ref: '#/components/schemas/SourceTime', not: {$ref: '#/components/schemas/TechnicalDate'}}
+        deadline: {$ref: '#/components/schemas/OptionalSourceTime'}
+        completionDate: {$ref: '#/components/schemas/OptionalSourceTime'}
+        lastAssignmentToTeamDateTime: {$ref: '#/components/schemas/OptionalSourceTime'}
+        header: {type: string}
+        description: {type: string}
+        shortDescription: {$ref: '#/components/schemas/OptionalText'}
+        assignedGroupName: {$ref: '#/components/schemas/OptionalText'}
+        assignedEmployee: {$ref: '#/components/schemas/OptionalText'}
+        assignedEmployeeLogin: {$ref: '#/components/schemas/OptionalText'}
+        initiatorName: {$ref: '#/components/schemas/OptionalText'}
+        initiatorLogin: {$ref: '#/components/schemas/OptionalText'}
+        isEffect: {type: boolean}
+        isReason: {type: boolean}
+        isDouble: {type: boolean}
+        isMaster: {type: boolean}
+        incType: {type: string}
+        serviceTypeId: {type: integer}
+        serviceType: {type: string}
+        priorityId: {$ref: '#/components/schemas/Priority'}
+        priority: {type: string}
+        urgencyId: {type: integer}
+        urgency: {type: string}
+        impactId: {type: integer}
+        impact: {type: string}
+        waitingExitDate: {$ref: '#/components/schemas/OptionalSourceTime'}
+        isRootIncident: {type: boolean}
+        productName: {type: string}
+        productId: {type: string}
+        productMasterId: {$ref: '#/components/schemas/OptionalText'}
+        productUrl: {$ref: '#/components/schemas/OptionalText'}
+        service: {type: string}
+        serviceId: {$ref: '#/components/schemas/OptionalText'}
+        scenarioName: {$ref: '#/components/schemas/OptionalText'}
+        isNeedUp: {type: [boolean, 'null']}
+        eliminationType: {$ref: '#/components/schemas/OptionalText'}
+        eliminationTypeId: {$ref: '#/components/schemas/OptionalText'}
+        receivingChannel: {$ref: '#/components/schemas/OptionalText'}
+        solution: {$ref: '#/components/schemas/OptionalText'}
+      if: {properties: {stateEnum: {enum: [Resolved, Closed, Research]}}}
+      then:
+        required: [completionDate]
+        properties:
+          completionDate: {$ref: '#/components/schemas/SourceTime', not: {$ref: '#/components/schemas/TechnicalDate'}}
+          solution: {type: string, pattern: '\S'}
+      else:
+        properties:
+          completionDate:
+            anyOf: [{type: 'null'}, {$ref: '#/components/schemas/TechnicalDate'}]
+    TechnicalDate:
+      type: string
+      pattern: '^0001-01-01T00:00:00(?:\.0{1,9})?(?:Z|\+00:00)?$'
+    Group: {type: string, enum: [critical, coordinators, high, research]}
+    Incident:
+      type: object
+      required: [id, header, description, productName, service, submitDate, updatedAt, stateEnum, priorityId, assignedGroupName, assignedEmployee, deadline, remainingSeconds, overdue, groups]
+      properties:
+        id: {$ref: '#/components/schemas/IncidentNumber'}
+        header: {type: string}
+        description: {$ref: '#/components/schemas/OptionalText'}
+        productName: {$ref: '#/components/schemas/OptionalText'}
+        service: {$ref: '#/components/schemas/OptionalText'}
+        submitDate: {$ref: '#/components/schemas/Time'}
+        updatedAt: {$ref: '#/components/schemas/Time'}
+        stateEnum: {$ref: '#/components/schemas/State'}
+        priorityId: {$ref: '#/components/schemas/Priority'}
+        assignedGroupName: {$ref: '#/components/schemas/OptionalText'}
+        assignedEmployee: {$ref: '#/components/schemas/OptionalText'}
+        deadline: {$ref: '#/components/schemas/OptionalTime'}
+        remainingSeconds: {type: [integer, 'null'], description: Разность срока и серверного времени в секундах; null для неактивных или без срока.}
+        overdue: {type: boolean, description: Только для активного INC при serverNow > deadline. Ровно в срок и при null — false.}
+        groups: {type: array, uniqueItems: true, items: {$ref: '#/components/schemas/Group'}}
+    Events:
+      type: array
+      items:
+        type: object
+        required: [eventId, eventSeq, id, revision, observedAt, reasons, requiresAck]
+        properties:
+          eventId: {type: string, minLength: 1}
+          eventSeq: {$ref: '#/components/schemas/Cursor'}
+          id: {$ref: '#/components/schemas/IncidentNumber'}
+          revision: {type: integer, format: int64}
+          observedAt: {$ref: '#/components/schemas/Time'}
+          reasons: {type: array, minItems: 1, uniqueItems: true, items: {enum: [newCritical, raisedToCritical, reopenedCritical, enteredCoordinators, criticalResolved]}}
+          requiresAck: {type: boolean}
+    Membership:
+      type: object
+      required: [groupId, name, available]
+      properties:
+        groupId: {type: integer, format: int64}
+        name: {type: string}
+        available: {type: boolean}
+    Task:
+      type: object
+      required: [taskId, incidentId, priorityId, groupId, assignmentId, coordinatorId, assignedAt, expiresAt, acceptedAt]
+      properties:
+        taskId: {type: integer, format: int64}
+        incidentId: {$ref: '#/components/schemas/IncidentNumber'}
+        priorityId: {$ref: '#/components/schemas/Priority'}
+        groupId: {type: integer, format: int64}
+        assignmentId: {type: integer, format: int64}
+        coordinatorId: {type: [integer, 'null'], format: int64}
+        assignedAt: {$ref: '#/components/schemas/OptionalTime'}
+        expiresAt: {$ref: '#/components/schemas/OptionalTime'}
+        acceptedAt: {$ref: '#/components/schemas/OptionalTime'}
+    PresetInput:
+      type: object
+      required: [name, filters]
+      properties:
+        name: {type: string, minLength: 1}
+        filters:
+          type: object
+          additionalProperties: false
+          properties:
+            group: {$ref: '#/components/schemas/Group'}
+            q: {type: string}
+            assignedGroupName: {type: string}
+            productName: {type: string}
+            stateEnum: {$ref: '#/components/schemas/State'}
+            priorityId: {$ref: '#/components/schemas/Priority'}
+            deadlineState: {enum: [overdue, withinDeadline, unspecified, inactive]}
+    SavedPreset:
+      allOf:
+        - {$ref: '#/components/schemas/PresetInput'}
+        - {type: object, required: [presetId], properties: {presetId: {type: integer, format: int64}}}
+    Investigation:
+      type: object
+      required: [runId, incidentId, revision, status, facts, unavailableSources, hypothesis, nextStep]
+      properties:
+        runId: {type: string}
+        incidentId: {$ref: '#/components/schemas/IncidentNumber'}
+        revision: {type: integer, format: int64}
+        status: {enum: [queued, running, completed, partial, failed]}
+        facts:
+          type: array
+          items:
+            type: object
+            required: [evidenceId, source, observedAt, scope, observation]
+            properties:
+              evidenceId: {type: string}
+              source: {type: string}
+              observedAt: {$ref: '#/components/schemas/Time'}
+              scope: {type: string}
+              observation: {type: string}
+        unavailableSources: {type: array, items: {type: string}}
+        hypothesis: {$ref: '#/components/schemas/OptionalText'}
+        nextStep: {$ref: '#/components/schemas/OptionalText'}
