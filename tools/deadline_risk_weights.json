@@ -150,6 +150,7 @@
     },
     "note": "testBeforeDeadline — метрики на подвыборке проб, где момент оценки t ещё до дедлайна; это продуктовая метрика «успели предупредить заранее»"
   },
-  "verdict": "regression does not clearly beat the median baseline — в продукт идёт бейзлайн B (см. verdictDetails)",
-  "verdictRule": "regression Wins, если при том же бюджете FPR ~20% recall выше бейзлайна B tuned минимум на 0.05 и F1 выше минимум на 0.03; иначе в продукт идёт бейзлайн B"
+  "verdict": "regression does not clearly beat the median baseline",
+  "defaultMode": "regression",
+  "verdictRule": "regression Wins, если при том же бюджете FPR ~20% recall выше бейзлайна B tuned минимум на 0.05 и F1 выше минимум на 0.03"
 }

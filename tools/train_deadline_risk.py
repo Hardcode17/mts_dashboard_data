@@ -367,7 +367,7 @@ def main() -> None:
     verdict = (
         "regressionWins"
         if beats
-        else "regression does not clearly beat the median baseline — в продукт идёт бейзлайн B (см. verdictDetails)"
+        else "regression does not clearly beat the median baseline"
     )
     print(f"\nВердикт: {verdict}")
 
@@ -408,7 +408,8 @@ def main() -> None:
             "note": "testBeforeDeadline — метрики на подвыборке проб, где момент оценки t ещё до дедлайна; это продуктовая метрика «успели предупредить заранее»",
         },
         "verdict": verdict,
-        "verdictRule": "regression Wins, если при том же бюджете FPR ~20% recall выше бейзлайна B tuned минимум на 0.05 и F1 выше минимум на 0.03; иначе в продукт идёт бейзлайн B",
+        "defaultMode": "regression",
+        "verdictRule": "regression Wins, если при том же бюджете FPR ~20% recall выше бейзлайна B tuned минимум на 0.05 и F1 выше минимум на 0.03",
     }
     args.weights_out.write_text(json.dumps(weights, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Веса: {args.weights_out}")
