@@ -221,6 +221,7 @@ python -m unittest discover -s docs/mcp/v1 -p 'test_*.py' -v
 
 На Linux/macOS перед установкой активируйте окружение: `source .venv-mcp-contract/bin/activate`.
 Тесты валидируют контракт, а не работающий MCP-сервер. Интеграционная приёмка OpenCode,
-снимков/checkpoint и доступа относится к реализации и KAN-78. До её прохождения пилот
-не считается принятым. Retention, SLA свежести, эпоха и snapshot/checkpoint — предлагаемые
+снимков/checkpoint и доступа относится к реализации и
+[KAN-78](pilot-acceptance.md). До её прохождения пилот не считается принятым.
+Retention, SLA свежести, эпоха и snapshot/checkpoint — предлагаемые
 решения v1, которые backend должен подтвердить при ревью.
