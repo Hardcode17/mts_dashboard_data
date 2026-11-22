@@ -1,0 +1,23 @@
+{
+  "incidentId": "INC000021940126",
+  "report": {
+    "at": 1795329170831,
+    "id": "mentor-2",
+    "analysis": {
+      "hypothesis": "МТС ID не дождался ответа сервиса профилей за 1,5 с.",
+      "recipient": "Команда профилей",
+      "next": "Проверить на стороне профилей, дошёл ли запрос login-a1ff32.",
+      "question": "На каком этапе остановился запрос login-a1ff32?",
+      "evidence": [
+        {
+          "source": "Журнал МТС ID · MCP",
+          "finding": "Ожидание ответа от profile превысило 1,5 с.",
+          "record": "service=mts-id upstream=profile result=timeout deadline_ms=1500 trace=login-a1ff32"
+        }
+      ]
+    },
+    "revision": 1795329118661,
+    "content": "INC000021940126\nЖурнал МТС ID · MCP: Ожидание ответа от profile превысило 1,5 с. (service=mts-id upstream=profile result=timeout deadline_ms=1500 trace=login-a1ff32)\nМТС ID не дождался ответа сервиса профилей за 1,5 с.\nКоманда профилей\nНа каком этапе остановился запрос login-a1ff32?\nПроверить на стороне профилей, дошёл ли запрос login-a1ff32.",
+    "title": "Сохранённый разбор учебного журнала · локальная модель Qwen2.5-3B"
+  }
+}
