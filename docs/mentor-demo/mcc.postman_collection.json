@@ -1,0 +1,191 @@
+{
+  "info": {
+    "name": "MCC · Менторская сессия",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Два полных снимка независимого источника. Выберите окружение Raspberry Pi (SSH-туннель) или подготовленное локальное окружение MCC на этом Mac."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{bearer}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const step = Number(pm.request.headers.get('X-Source-Version'));",
+          "try {",
+          "    const local = pm.environment.get('target') === 'local';",
+          "    pm.variables.set('ingestUrl', local ? 'http://127.0.0.1:8092' : 'http://127.0.0.1:18081');",
+          "    const secret = (pm.environment.get('itsm_client_secret') || '').trim();",
+          "    if (!secret) throw new Error('Выберите окружение MCC и заполните локальное значение itsm_client_secret.');",
+          "",
+          "    const token = await pm.sendRequest({",
+          "        method: 'POST',",
+          "        url: local ? 'http://localhost:8084/realms/dashboard/protocol/openid-connect/token' : 'https://raspberrypi.tail029aee.ts.net/keycloak/realms/dashboard/protocol/openid-connect/token',",
+          "        body: {mode: 'urlencoded', urlencoded: [",
+          "            {key: 'grant_type', value: 'client_credentials'},",
+          "            {key: 'client_id', value: 'itsm-sender'},",
+          "            {key: 'client_secret', value: secret}",
+          "        ]}",
+          "    });",
+          "    if (token.code !== 200 || !token.json().access_token) throw new Error('Keycloak не выдал токен, HTTP ' + token.code);",
+          "    pm.variables.set('bearer', token.json().access_token);",
+          "",
+          "    const saved = pm.environment.get('session_state');",
+          "    let session = saved ? JSON.parse(saved) : null;",
+          "    if (step === 2 && !session?.baselineApplied) throw new Error('Сначала отправьте исходный снимок и дождитесь SUCCEEDED.');",
+          "    if (!session) {",
+          "        const guid = () => pm.variables.replaceIn('{{$guid}}');",
+          "        const tag = String(parseInt(guid().slice(0, 8), 16)).padStart(10, '0');",
+          "        session = {tag, baselineAt: new Date().toISOString(), keys: [guid(), guid()]};",
+          "    }",
+          "    if (step === 2 && !session.criticalAt) session.criticalAt = new Date().toISOString();",
+          "    pm.environment.set('session_state', JSON.stringify(session));",
+          "",
+          "    const firstVersion = session.firstVersion || 1;",
+          "    const sourceVersion = firstVersion + step - 1;",
+          "    pm.request.headers.upsert({key: 'X-Source-Version', value: String(sourceVersion)});",
+          "    pm.variables.set('sourceVersion', sourceVersion);",
+          "    pm.variables.set('step', step);",
+          "    pm.variables.set('criticalSuffix', firstVersion + 1);",
+          "    pm.variables.set('source', 'mentor-session-' + session.tag);",
+          "    pm.variables.set('key', session.keys[step - 1]);",
+          "    pm.variables.set('tag', session.tag);",
+          "    pm.variables.set('baselineAt', session.baselineAt);",
+          "    if (step === 2) {",
+          "        pm.variables.set('criticalAt', session.criticalAt);",
+          "        pm.variables.set('deadline', new Date(Date.parse(session.criticalAt) + 30 * 60000).toISOString());",
+          "    }",
+          "} catch (error) {",
+          "    console.error(error.message);",
+          "    pm.execution.skipRequest();",
+          "    throw error;",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const key = pm.variables.get('key');",
+          "const source = pm.variables.get('source');",
+          "const version = Number(pm.variables.get('sourceVersion'));",
+          "const step = Number(pm.variables.get('step'));",
+          "pm.test('Снимок принят · HTTP 202', () => pm.response.to.have.status(202));",
+          "if (pm.response.code === 202) {",
+          "    pm.test('Приёмник вернул ожидаемый batchId', () => pm.expect(pm.response.json().batchId).to.equal(key));",
+          "    const until = Date.now() + 30000;",
+          "    let batch;",
+          "    do {",
+          "        const response = await pm.sendRequest({",
+          "            method: 'GET', url: pm.variables.get('ingestUrl') + '/api/integrations/itsm/batches/' + key,",
+          "            header: {Authorization: 'Bearer ' + pm.variables.get('bearer')}",
+          "        });",
+          "        if (response.code !== 200) throw new Error('Чтение статуса пакета: HTTP ' + response.code);",
+          "        batch = response.json();",
+          "        if (['SUCCEEDED', 'FAILED'].includes(batch.status)) break;",
+          "        await new Promise(resolve => setTimeout(resolve, 700));",
+          "    } while (Date.now() < until);",
+          "    const inc = 'INC9' + pm.variables.get('tag') + (step === 1 ? 1 : pm.variables.get('criticalSuffix'));",
+          "    pm.test('SUCCEEDED · ' + inc, () => {",
+          "        pm.expect(batch.batchId).to.equal(key);",
+          "        pm.expect(batch.sourceId).to.equal(source);",
+          "        pm.expect(Number(batch.sourceVersion)).to.equal(version);",
+          "        pm.expect(batch.status, JSON.stringify(batch.diagnostic || batch.status)).to.equal('SUCCEEDED');",
+          "    });",
+          "    if (step === 1 && batch.batchId === key && batch.sourceId === source &&",
+          "        Number(batch.sourceVersion) === version && batch.status === 'SUCCEEDED') {",
+          "        const session = JSON.parse(pm.environment.get('session_state'));",
+          "        session.baselineApplied = true;",
+          "        pm.environment.set('session_state', JSON.stringify(session));",
+          "    }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 · Исходный снимок",
+      "request": {
+        "method": "POST",
+        "url": "{{ingestUrl}}/api/integrations/itsm/batches",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{key}}"
+          },
+          {
+            "key": "X-Source-Id",
+            "value": "{{source}}"
+          },
+          {
+            "key": "X-Source-Version",
+            "value": "1"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "[\n  {\n    \"id\": \"INC9{{tag}}1\",\n    \"sysId\": \"19{{tag}}01\",\n    \"header\": \"Менторская сессия · курьер не видит заказ\",\n    \"description\": \"Курьер не видит новый заказ в приложении доставки.\",\n    \"productName\": \"Демо · Доставка\",\n    \"service\": \"Приложение курьера\",\n    \"scenarioName\": \"Получение заказа\",\n    \"submitDate\": \"{{baselineAt}}\",\n    \"lastAssignmentToTeamDateTime\": \"{{baselineAt}}\",\n    \"deadline\": null,\n    \"priorityId\": 2,\n    \"priority\": \"Средний\",\n    \"stateEnum\": \"Assigned\",\n    \"stateId\": 0,\n    \"state\": \"Назначен\",\n    \"assignedGroupName\": \"КЦ ИТ Координаторы Массовых Инцидентов\",\n    \"completionDate\": null,\n    \"solution\": null\n  }\n]",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Отправьте до встречи. Дождитесь зелёной проверки SUCCEEDED в Test Results."
+      },
+      "response": []
+    },
+    {
+      "name": "02 · Новый критический INC",
+      "request": {
+        "method": "POST",
+        "url": "{{ingestUrl}}/api/integrations/itsm/batches",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{key}}"
+          },
+          {
+            "key": "X-Source-Id",
+            "value": "{{source}}"
+          },
+          {
+            "key": "X-Source-Version",
+            "value": "2"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "[\n  {\n    \"id\": \"INC9{{tag}}1\",\n    \"sysId\": \"19{{tag}}01\",\n    \"header\": \"Менторская сессия · курьер не видит заказ\",\n    \"description\": \"Курьер не видит новый заказ в приложении доставки.\",\n    \"productName\": \"Демо · Доставка\",\n    \"service\": \"Приложение курьера\",\n    \"scenarioName\": \"Получение заказа\",\n    \"submitDate\": \"{{baselineAt}}\",\n    \"lastAssignmentToTeamDateTime\": \"{{baselineAt}}\",\n    \"deadline\": null,\n    \"priorityId\": 2,\n    \"priority\": \"Средний\",\n    \"stateEnum\": \"Assigned\",\n    \"stateId\": 0,\n    \"state\": \"Назначен\",\n    \"assignedGroupName\": \"КЦ ИТ Координаторы Массовых Инцидентов\",\n    \"completionDate\": null,\n    \"solution\": null\n  },\n  {\n    \"id\": \"INC9{{tag}}{{criticalSuffix}}\",\n    \"sysId\": \"19{{tag}}0{{criticalSuffix}}\",\n    \"header\": \"Менторская сессия · массовая ошибка входа\",\n    \"description\": \"Пользователи не могут войти через МТС ID.\",\n    \"productName\": \"Демо · МТС ID\",\n    \"service\": \"Авторизация\",\n    \"scenarioName\": \"Вход\",\n    \"submitDate\": \"{{criticalAt}}\",\n    \"lastAssignmentToTeamDateTime\": \"{{criticalAt}}\",\n    \"deadline\": \"{{deadline}}\",\n    \"priorityId\": 4,\n    \"priority\": \"Наивысший\",\n    \"stateEnum\": \"Assigned\",\n    \"stateId\": 0,\n    \"state\": \"Назначен\",\n    \"assignedGroupName\": \"КЦ ИТ Координаторы Массовых Инцидентов\",\n    \"completionDate\": null,\n    \"solution\": null\n  }\n]",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Отправьте во время встречи. Полный снимок сохраняет доставку и добавляет активный P4. Номер критического INC виден в Test Results."
+      },
+      "response": []
+    }
+  ]
+}
